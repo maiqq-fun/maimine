@@ -6,19 +6,20 @@
 <title>Maimine 管理頁</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Mali:wght@600;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Chiron+GoRound+TC:wght@400;500;700;900&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
 <style>
 :root{
   /* 跟預約頁同一套：米白底、墨黑、鼠尾草綠 */
   --paper:#F0EFEA; --ink:#161616; --sage:#9DAE92; --sage-deep:#6F8463; --pill:#DCE2D5; --chip:#ECEFE7;
   --card:#FAFAF7; --line:#D3D7CC; --muted:#6B6E66; --warn:#B7791F; --warn-bg:#F6EAD3; --danger:#B4543F;
-  --hand:"Mali","Noto Sans TC",system-ui,sans-serif;
-  --body:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+  --hand:"Nunito","Chiron GoRound TC",system-ui,sans-serif;
+  --body:"Nunito","Chiron GoRound TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+  --open:#161616; --cang:#E2CDA8; --cang-ink:#6B4F2A; --rest:#E3C4C4; --rest-ink:#7A4545;
   color-scheme:light;
 }
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--paper);color:var(--ink)}
-body{font-family:var(--body);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+body{font-family:var(--body);font-size:15px;line-height:1.6;letter-spacing:.04em;-webkit-font-smoothing:antialiased}
 button,input,select,textarea{font:inherit;color:inherit}
 :focus-visible{outline:2.5px solid var(--sage-deep);outline-offset:2px}
 .wrap{max-width:560px;margin:0 auto;padding:0 16px 60px}
@@ -43,7 +44,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .datehead{font-family:var(--hand);font-weight:700;font-size:15px;color:var(--muted);margin:18px 0 8px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 14px;margin-bottom:10px;display:grid;gap:6px}
 .card .l1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.card .time{font-family:var(--hand);font-weight:700;font-size:18px}
+.card .time{font-family:var(--hand);font-weight:900;font-size:18px}
 .card .loc{font-weight:700}
 .pill{margin-left:auto;font-size:12.5px;font-weight:700;border-radius:99px;padding:2px 10px}
 .st-待確認{background:var(--warn-bg);color:var(--warn)}
@@ -68,8 +69,19 @@ label.f textarea{min-height:70px;resize:vertical}
 .section .hint{margin:0;font-size:13px;color:var(--muted)}
 .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
 .cal .wd{text-align:center;font-size:12px;color:var(--muted);font-weight:700}
-.cal button{position:relative;border:0;aspect-ratio:1;border-radius:10px;background:var(--chip);font-family:var(--hand);font-weight:700;font-size:15px;cursor:pointer}
-.cal button.on{background:var(--sage);box-shadow:inset 0 0 0 1.5px var(--ink)}
+.cal button{position:relative;border:0;aspect-ratio:1;border-radius:10px;background:var(--chip);font-family:var(--hand);font-weight:800;font-size:15px;cursor:pointer;color:var(--ink)}
+.cal button.on{background:var(--open);color:var(--paper)}
+.cal button.m-倉{background:var(--cang);color:var(--cang-ink)}
+.cal button.m-休{background:var(--rest);color:var(--rest-ink)}
+.cal button b{position:absolute;top:2px;right:5px;font-family:var(--body);font-size:10px;font-weight:900}
+.cal button.on i{color:var(--paper)}
+.modes{display:flex;gap:6px;flex-wrap:wrap}
+.mode{display:inline-flex;align-items:center;gap:6px;border:0;background:var(--chip);box-shadow:inset 0 0 0 1px var(--line);border-radius:99px;padding:5px 12px;font-weight:700;font-size:14px;cursor:pointer}
+.mode.sel{box-shadow:inset 0 0 0 2px var(--ink);background:#fff}
+.sw{width:14px;height:14px;border-radius:4px;display:inline-block;flex:none}
+.sw.open{background:var(--open)} .sw.cang{background:var(--cang)} .sw.rest{background:var(--rest)} .sw.none{background:var(--chip);box-shadow:inset 0 0 0 1px var(--line)}
+.legend{display:grid;gap:4px;font-size:13px;color:var(--muted)}
+.legend span{display:flex;align-items:center;gap:8px}
 .cal button i{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);font-style:normal;font-family:var(--body);font-size:10px;color:var(--ink)}
 .preview{width:100%;border-radius:12px;border:1px solid var(--line);display:block}
 .plan{display:grid;grid-template-columns:1fr 78px 78px 34px;gap:6px;align-items:end}
@@ -125,7 +137,7 @@ const fmtDate = ds => { const [,m,d] = ds.split("-").map(Number); return `${m}/$
 const ACTIVE = ["待確認","待付定金","已預約"];
 const TIMES = []; for(let m=10*60; m<=21*60; m+=30) TIMES.push(pad(Math.floor(m/60))+":"+pad(m%60));
 
-let DATA = null, filter = "todo", openEdit = null, curMonth = null, draft = null;
+let DATA = null, filter = "todo", openEdit = null, curMonth = null, draft = null, calMode = "open";
 
 function toast(t, err){ const el = $("toast"); el.textContent = t; el.className = "toast" + (err?" err":""); el.style.display = "block"; clearTimeout(toast.t); toast.t = setTimeout(()=> el.style.display="none", err?4500:2200); }
 
@@ -306,7 +318,7 @@ function renderMonths(){
   $("newMonth").onclick = () => {
     const src = months[months.length-1] || { tag:"", items:"", plans:[], notes:"" };
     const m = nextMonthOf(latest);
-    DATA.months.push({ month:m, openDays:[], header:"", headerUrl:"", tag:src.tag.replace(/\d+月/, Number(m.slice(5))+"月"), items:src.items, plans:JSON.parse(JSON.stringify(src.plans)), notes:src.notes, visible:false, _new:true });
+    DATA.months.push({ month:m, openDays:[], header:"", headerUrl:"", tag:src.tag.replace(/\d+月/, Number(m.slice(5))+"月"), items:src.items, plans:JSON.parse(JSON.stringify(src.plans)), notes:src.notes, visible:false, marks:{}, _new:true });
     curMonth = m; draft = null; renderMonths();
     toast("已複製上個月的活動和須知，記得改完按儲存");
   };
@@ -322,7 +334,12 @@ function renderMonthEditor(){
   const cnt = {};
   DATA.bookings.forEach(b => { if(ACTIVE.includes(b.status) && b.date.startsWith(M.month)) cnt[Number(b.date.slice(8))] = (cnt[Number(b.date.slice(8))]||0) + 1; });
   let cal = WD.map(w => `<div class="wd">${w}</div>`).join("") + "<div></div>".repeat(first);
-  for(let d=1; d<=days; d++) cal += `<button type="button" class="${M.openDays.includes(d)?"on":""}" data-d="${d}" aria-pressed="${M.openDays.includes(d)}">${d}${cnt[d] ? `<i>約${cnt[d]}</i>` : ""}</button>`;
+  M.marks = M.marks || {};
+  for(let d=1; d<=days; d++){
+    const st = M.openDays.includes(d) ? "on" : (M.marks[d] ? "m-"+M.marks[d] : "");
+    const lab = M.openDays.includes(d) ? "可約" : (M.marks[d] || "未設定");
+    cal += `<button type="button" class="${st}" data-d="${d}" aria-label="${mm}/${d} ${lab}">${d}${M.marks[d] ? `<b>${M.marks[d]}</b>` : ""}${cnt[d] ? `<i>約${cnt[d]}</i>` : ""}</button>`;
+  }
 
   $("monthEditor").innerHTML = `
   <div class="section">
@@ -331,10 +348,23 @@ function renderMonthEditor(){
     <p class="hint">準備好再勾選公開。沒公開的月份客人看不到。</p>
   </div>
   <div class="section">
-    <h2>開放日期</h2>
-    <p class="hint">點日期切換開放或關閉。綠色是開放；「約1」代表那天已經有幾筆預約。</p>
+    <h2>日期設定</h2>
+    <p class="hint">先選上面的顏色，再點日期。同一個顏色再點一次就會清除。</p>
+    <div class="modes" id="modes">
+      <button type="button" class="mode" data-mode="open"><span class="sw open"></span>可約</button>
+      <button type="button" class="mode" data-mode="倉"><span class="sw cang"></span>倉</button>
+      <button type="button" class="mode" data-mode="休"><span class="sw rest"></span>休</button>
+      <button type="button" class="mode" data-mode="clear"><span class="sw none"></span>清除</button>
+    </div>
     <div class="cal" id="cal">${cal}</div>
-    <div class="row"><button type="button" class="btn" id="m-all">全選</button><button type="button" class="btn" id="m-none">全部清除</button></div>
+    <div class="legend">
+      <span><i class="sw open"></i>可約：客人在預約頁看得到、可以約</span>
+      <span><i class="sw cang"></i>倉：只有你看得到，不開放預約</span>
+      <span><i class="sw rest"></i>休：只有你看得到，不開放預約</span>
+      <span><i class="sw none"></i>未設定：不開放預約</span>
+      <span>「約1」是那天已經有幾筆預約</span>
+    </div>
+    <div class="row"><button type="button" class="btn" id="m-all">空白日全設可約</button><button type="button" class="btn" id="m-none">全部清除</button></div>
   </div>
   <div class="section">
     <h2>頁首圖</h2>
@@ -358,15 +388,23 @@ function renderMonthEditor(){
   <button type="button" class="btn main" id="m-save" style="width:100%;padding:13px">儲存 ${mm} 月</button>`;
 
   renderPlans();
-  $("cal").querySelectorAll("button").forEach(b => b.onclick = () => {
-    const d = Number(b.dataset.d), i = M.openDays.indexOf(d);
-    if(i >= 0){ if(cnt[d] && !confirm(`${mm}/${d} 已經有預約，確定要關閉嗎？\n已經約的不會被取消，只是客人不能再約這天。`)) return; M.openDays.splice(i,1); }
-    else M.openDays.push(d);
-    M.openDays.sort((a,b)=>a-b);
-    b.classList.toggle("on"); b.setAttribute("aria-pressed", M.openDays.includes(d));
+  $("modes").querySelectorAll(".mode").forEach(b => {
+    b.classList.toggle("sel", b.dataset.mode === calMode);
+    b.onclick = () => { calMode = b.dataset.mode; $("modes").querySelectorAll(".mode").forEach(x => x.classList.toggle("sel", x === b)); };
   });
-  $("m-all").onclick = () => { M.openDays = Array.from({length:days},(_,i)=>i+1); syncDraft(); renderMonthEditor(); };
-  $("m-none").onclick = () => { M.openDays = []; syncDraft(); renderMonthEditor(); };
+  $("cal").querySelectorAll("button").forEach(b => b.onclick = () => {
+    const d = Number(b.dataset.d);
+    const cur = M.openDays.includes(d) ? "open" : (M.marks[d] || "clear");
+    let next = calMode === cur ? "clear" : calMode;
+    if(cur === "open" && next !== "open" && cnt[d] && !confirm(`${mm}/${d} 已經有預約，確定要關閉嗎？\n已經約的不會被取消，只是客人不能再約這天。`)) return;
+    M.openDays = M.openDays.filter(x => x !== d); delete M.marks[d];
+    if(next === "open") M.openDays.push(d);
+    else if(next !== "clear") M.marks[d] = next;
+    M.openDays.sort((a,b)=>a-b);
+    syncDraft(); renderMonthEditor();
+  });
+  $("m-all").onclick = () => { for(let d=1; d<=days; d++) if(!M.marks[d] && !M.openDays.includes(d)) M.openDays.push(d); M.openDays.sort((a,b)=>a-b); syncDraft(); renderMonthEditor(); };
+  $("m-none").onclick = () => { if(!confirm("清除這個月所有的可約、倉、休？")) return; M.openDays = []; M.marks = {}; syncDraft(); renderMonthEditor(); };
   $("m-file").onchange = async e => {
     const f = e.target.files[0]; if(!f) return;
     $("m-up").textContent = "上傳中…";
@@ -406,7 +444,7 @@ async function saveMonth(){
   const btn = $("m-save"); btn.disabled = true;
   try{
     const j = await api("adminSaveMonth", { month: { month:M.month, openDays:M.openDays, header:M.header, tag:M.tag, items:M.items,
-      plans:M.plans.filter(p=>p.name).map(p=>({ name:p.name, price:Number(p.price)||0, was:Number(p.was)||0 })), notes:M.notes, visible:M.visible } });
+      plans:M.plans.filter(p=>p.name).map(p=>({ name:p.name, price:Number(p.price)||0, was:Number(p.was)||0 })), notes:M.notes, visible:M.visible, marks:M.marks||{} } });
     DATA.months = j.months; draft = null; renderMonths(); toast("已儲存，預約頁已更新");
   }catch(err){ toast(err.message, true); btn.disabled = false; }
 }
