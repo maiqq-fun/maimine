@@ -10,12 +10,18 @@
 <style>
 :root{
   /* 跟預約頁同一套：米白底、墨黑、鼠尾草綠 */
-  --paper:#F0EFEA; --ink:#161616; --sage:#9DAE92; --sage-deep:#6F8463; --pill:#DCE2D5; --chip:#ECEFE7;
+  --paper:#F0EFEA; --ink:#161616; --sage:#A2AA93; --sage-deep:#6F8463; --pill:#D4D6C8; --chip:#ECEFE7;
   --card:#FAFAF7; --line:#D3D7CC; --muted:#6B6E66; --warn:#B7791F; --warn-bg:#F6EAD3; --danger:#B4543F;
   --hand:"Nunito","Chiron GoRound TC",system-ui,sans-serif;
   --body:"Nunito","Chiron GoRound TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
   --open:#161616; --cang:#E2CDA8; --cang-ink:#6B4F2A; --rest:#E3C4C4; --rest-ink:#7A4545;
   color-scheme:light;
+}
+:root{
+  --chip:color-mix(in srgb,var(--pill) 45%,var(--paper));
+  --sage-deep:color-mix(in srgb,var(--sage) 62%,var(--ink));
+  --card:color-mix(in srgb,#fff 55%,var(--paper));
+  --line:color-mix(in srgb,var(--pill) 85%,var(--ink));
 }
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--paper);color:var(--ink)}
@@ -86,6 +92,16 @@ label.f textarea{min-height:70px;resize:vertical}
 .preview{width:100%;border-radius:12px;border:1px solid var(--line);display:block}
 .plan{display:grid;grid-template-columns:1fr 78px 78px 34px;gap:6px;align-items:end}
 .plan .x{border:0;background:none;font-size:20px;color:var(--danger);cursor:pointer;padding-bottom:6px}
+.theme{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tc{display:flex;gap:10px;align-items:center;background:var(--chip);border-radius:12px;padding:8px 10px;cursor:pointer}
+.tc input{width:38px;height:38px;border:0;padding:0;background:none;border-radius:10px;flex:none;cursor:pointer}
+.tc b{display:block;font-size:14px}.tc small{display:block;font-size:11.5px;color:var(--muted);line-height:1.3}
+.banners{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.bn{display:grid;gap:6px;align-content:start}
+.bn-h b{font-size:14px;display:block}.bn-h small{font-size:11.5px;color:var(--muted);display:block;line-height:1.3;min-height:2.6em}
+.bn img,.bn-empty{width:100%;aspect-ratio:2/1;object-fit:cover;border-radius:10px;border:1px solid var(--line);display:block}
+.bn-empty{background:var(--sage);display:grid;place-content:center;text-align:center;font-weight:900;font-size:12px;line-height:1.1;letter-spacing:.1em}
+.bn .btn{padding:6px 10px;font-size:13px}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:10px 18px;border-radius:99px;font-weight:700;font-size:14px;z-index:20;display:none;max-width:90%;text-align:center}
 .toast.err{background:var(--danger)}
 .msg{padding:40px 10px;text-align:center;color:var(--muted)}
@@ -128,6 +144,13 @@ label.f textarea{min-height:70px;resize:vertical}
 <script>
 const API = "https://script.google.com/macros/s/AKfycbxPxZpN-_GW19fy5qL6mN-DXh78cEEJFmbC9EsBecf0c0hmxTGP1Ln6k57g6bXsmvR-aA/exec";
 
+
+/* ---------- 整體配色（管理頁「設定」裡改） ---------- */
+function applyTheme(t){
+  if(!t) return;
+  const r = document.documentElement.style;
+  ["paper","sage","pill","ink"].forEach(k => { if(/^#[0-9a-fA-F]{6}$/.test(t[k]||"")) r.setProperty("--"+k, t[k]); });
+}
 const WD = ["日","一","二","三","四","五","六"];
 const $ = id => document.getElementById(id);
 const pad = n => String(n).padStart(2,"0");
@@ -137,6 +160,9 @@ const fmtDate = ds => { const [,m,d] = ds.split("-").map(Number); return `${m}/$
 const ACTIVE = ["待確認","待付定金","已預約"];
 const TIMES = []; for(let m=10*60; m<=21*60; m+=30) TIMES.push(pad(Math.floor(m/60))+":"+pad(m%60));
 
+const THEME_DEFAULT = { paper:"#F0EFEA", sage:"#A2AA93", pill:"#D4D6C8", ink:"#161616" };
+const THEME_FIELDS = [["paper","底色","整頁背景、卡片底"],["sage","主色","選中的按鈕、色塊"],["pill","淺色","日期格、活動框"],["ink","文字","文字、深色按鈕"]];
+const BANNER_FIELDS = [["確認","你按確認後，客人收到"],["成立","收到定金後"],["提醒","預約前一天"],["改時間","你修改時間地點後"],["取消","你取消預約後"],["婉拒","你婉拒預約後"],["新預約","你自己收到的新預約通知"]];
 let DATA = null, filter = "todo", openEdit = null, curMonth = null, draft = null, calMode = "open";
 
 function toast(t, err){ const el = $("toast"); el.textContent = t; el.className = "toast" + (err?" err":""); el.style.display = "block"; clearTimeout(toast.t); toast.t = setTimeout(()=> el.style.display="none", err?4500:2200); }
@@ -161,6 +187,7 @@ async function boot(){
     await liff.init({ liffId: id });
     if(!liff.isLoggedIn()){ liff.login({ redirectUri: location.href }); return; }
     DATA = await api("adminLoad");
+    applyTheme(DATA.settings.theme);
     $("msg").style.display = "none";
     showPane("book");
   }catch(err){ $("msg").textContent = "載入失敗：" + err.message; }
@@ -466,6 +493,25 @@ function renderSettings(){
     <p class="hint">預約成立（收到定金）後才會傳給客人。</p>
     ${S.locations.map((l,i) => `<label class="f">${esc(l)}<input id="s-addr-${i}" value="${esc(S.addresses[l]||"")}"></label>`).join("")}
   </div>
+  <div class="section">
+    <h2>整體配色</h2>
+    <p class="hint">改這裡，預約頁、管理頁和 LINE 卡片訊息會一起換顏色。調的時候管理頁會先變色給你看，按「儲存設定」才會套用到全部。</p>
+    <div class="theme">
+      ${THEME_FIELDS.map(([k,t,d]) => `<label class="tc"><input type="color" id="t-${k}" value="${esc(S.theme[k])}"><span><b>${t}</b><small>${d}</small></span></label>`).join("")}
+    </div>
+    <div class="row"><button type="button" class="btn" id="t-reset">恢復海報配色</button></div>
+  </div>
+  <div class="section">
+    <h2>訊息橫幅圖</h2>
+    <p class="hint">每種 LINE 卡片訊息最上方的圖，建議 1040 × 520（寬:高 = 2:1）。沒上傳的會顯示主色色塊加 MAIMINE STUDIO 字樣。</p>
+    <div class="banners">
+      ${BANNER_FIELDS.map(([k,d]) => { const bn = (S.banners||{})[k] || {}; return `<div class="bn">
+        <div class="bn-h"><b>${k}</b><small>${d}</small></div>
+        ${bn.url ? `<img src="${esc(bn.url)}" alt="${k}的橫幅">` : `<div class="bn-empty">MAIMINE<br>STUDIO</div>`}
+        <div class="row"><label class="btn" for="bn-${k}">${bn.url ? "換圖" : "上傳"}</label><input type="file" id="bn-${k}" data-bn="${k}" accept="image/*" hidden>
+        ${bn.url ? `<button type="button" class="btn ghost" data-bnrm="${k}">移除</button>` : ""}</div></div>`; }).join("")}
+    </div>
+  </div>
   <button type="button" class="btn main" id="s-save" style="width:100%;padding:13px">儲存設定</button>
   <p class="hint" style="margin-top:14px;color:var(--muted);font-size:13px">時段範圍、提前天數、定金金額、預約項目和地點，在 Google 試算表的「其他設定」分頁裡改。</p>`;
   $("s-file").onchange = async e => {
@@ -478,12 +524,29 @@ function renderSettings(){
       DATA.settings = r.settings; renderSettings(); toast("收款碼已更新");
     }catch(err){ $("s-up").textContent = ""; toast(err.message, true); }
   };
+  THEME_FIELDS.forEach(([k]) => $("t-"+k).oninput = () => { const t = {}; THEME_FIELDS.forEach(([k2]) => t[k2] = $("t-"+k2).value); applyTheme(t); });
+  $("t-reset").onclick = () => { Object.keys(THEME_DEFAULT).forEach(k => $("t-"+k).value = THEME_DEFAULT[k]); applyTheme(THEME_DEFAULT); toast("按「儲存設定」才會套用到全部"); };
+  document.querySelectorAll("[data-bn]").forEach(inp => inp.onchange = async e => {
+    const f = e.target.files[0], k = inp.dataset.bn; if(!f) return;
+    toast("上傳中…");
+    try{
+      const data = await resizeImage(f, 1040, 0.88);
+      const j = await api("adminUpload", { data, mime:"image/jpeg", name:`banner-${k}.jpg` });
+      const r = await api("adminSaveSettings", { settings:{ banners:{ [k]: j.id } } });
+      DATA.settings = r.settings; renderSettings(); toast(`「${k}」橫幅已更新`);
+    }catch(err){ toast(err.message, true); }
+  });
+  document.querySelectorAll("[data-bnrm]").forEach(b => b.onclick = async () => {
+    try{ const r = await api("adminSaveSettings", { settings:{ banners:{ [b.dataset.bnrm]: "" } } }); DATA.settings = r.settings; renderSettings(); toast("已移除"); }
+    catch(err){ toast(err.message, true); }
+  });
   if($("s-rmimg")) $("s-rmimg").onclick = async () => {
     try{ const r = await api("adminSaveSettings", { settings:{ payImage:"" } }); DATA.settings = r.settings; renderSettings(); toast("已移除"); }catch(err){ toast(err.message, true); }
   };
   $("s-save").onclick = async () => {
     const addresses = {}; S.locations.forEach((l,i) => addresses[l] = $("s-addr-"+i).value.trim());
-    try{ const r = await api("adminSaveSettings", { settings:{ payInfo:$("s-pay").value, addresses } }); DATA.settings = r.settings; toast("已儲存"); }
+    const theme = {}; THEME_FIELDS.forEach(([k]) => theme[k] = $("t-"+k).value);
+    try{ const r = await api("adminSaveSettings", { settings:{ payInfo:$("s-pay").value, addresses, theme } }); DATA.settings = r.settings; applyTheme(r.settings.theme); toast("已儲存"); }
     catch(err){ toast(err.message, true); }
   };
 }
