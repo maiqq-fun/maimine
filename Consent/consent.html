@@ -201,4 +201,5 @@ $('#next').onclick=function(){var b=this;if(!armed){armed=true;b.textContent='�
  clearTimeout(t);armed=false;b.textContent='下一位客人（清空表單）';try{localStorage.removeItem(K)}catch(e){}
  $('#f').reset();$('#td').value=today();sync();$('#g8').style.display='none';p1.size();if(p2)p2.size();window.scrollTo(0,0)};
 })();
-</script></body></html>
+</script>
+<script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script></body></html>
