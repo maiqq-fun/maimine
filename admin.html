@@ -1087,7 +1087,10 @@ function impParse(text){
     const old = g.cust ? visitsOf(g.cust.id) : [];
     const treats = old.filter(v => v.kind === "施作").map(v => ({ date:v.date, months:Number(v.months) || 0, again:Number(v.again) || (Number(v.months) ? CFG().againWith : CFG().againWithout), used:!!v.voucherUsed, dbId:v.id }));
     g.out = []; g.useVouchers = [];
-    g.rows.forEach(o => { o.dt = parseDay(o.date); });
+    // 日期沒寫年份（5/9、5.9、5月9日）就補今年；補完是未來的日期就算去年
+    const withYear = s => { s = String(s || "").trim(); const m = s.match(/^(\d{1,2})\s*[.\/\-月]\s*(\d{1,2})\s*日?$/);
+      if(!m) return s; const y = Number(on.slice(0,4)); const d = parseDay(`${y}.${m[1]}.${m[2]}`); return d && d > on ? `${y-1}.${m[1]}.${m[2]}` : `${y}.${m[1]}.${m[2]}`; };
+    g.rows.forEach(o => { o.dt = parseDay(withYear(o.date)); });
     g.rows.slice().sort((a,b) => (a.dt || "").localeCompare(b.dt || "")).forEach(o => {
       const e = { line:o.line, date:o.dt, raw:o };
       if(!o.dt){ e.err = `日期「${o.date}」看不懂`; g.out.push(e); return; }
@@ -1148,6 +1151,7 @@ function impForm(){
       <li>補色券填「有」：包套金額＝體驗價＋${money(IMP_ADDON)}，${IMP_MONTHS} 個月，續補 ${money(IMP_AGAIN_WITH)}；沒有：續補 ${money(IMP_AGAIN_WITHOUT)}</li>
       <li>補色價空白會自動算：補色券期限內用券 $0，否則用續補價</li>
       <li>支出：「設定 → 估算支出」那幾個月會用「每位客人 × 金額」算，租金可以空白；有填租金才會另外記一筆。工作室也可以空白，之後在紀錄裡「✏️ 修改」</li>
+      <li>日期可以不寫年份（5/9、5.9），會自動補今年；用斜線打最保險，打 5.10 試算表可能會變成 5.1</li>
       <li>手機一樣（或沒手機但姓名一樣）的客人會加到她原本的紀錄，已經有的同一天紀錄會略過</li>
     </ul>
     <button type="button" class="mini" id="imp-head">📋 複製表頭（貼到試算表第一列）</button>
