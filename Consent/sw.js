@@ -1,6 +1,6 @@
 // MAIMINE 同意書離線快取
 // 改了 consent.html 之後，把下面的版本號 +1（v1 → v2），平板才會抓到新版
-const CACHE = 'mm-consent-v2';
+const CACHE = 'mm-consent-v3';
 const CORE = ['./consent.html', './apple-touch-icon.png'];
 const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
 

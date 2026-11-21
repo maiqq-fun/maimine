@@ -39,6 +39,11 @@ label.ck span{font-size:20px;color:var(--ink);font-weight:500}
 .fld input{flex:1;min-width:0;font:inherit;font-weight:500;color:var(--ink);border:0;border-bottom:3px solid #B7BCA3;background:transparent;padding:6px 4px;border-radius:0;outline:0;min-height:46px}
 .fld input:focus{border-bottom-color:var(--gr)}
 .fld span{flex:none}
+.memo{display:block;margin-top:12px;font-weight:700;font-size:19px}
+.memo small{font-weight:400;color:var(--txt);font-size:16px;margin-left:6px}
+.memo textarea{display:block;width:100%;margin-top:6px;font:inherit;font-weight:500;font-size:18px;color:var(--ink);border:3px solid #B7BCA3;border-radius:16px;background:#fff;padding:8px 12px;min-height:84px;resize:vertical;outline:0}
+.memo textarea:focus{border-color:var(--gr)}
+body.back .first{display:none}
 .pad{position:relative;margin-top:8px}
 .pad canvas{display:block;width:100%;height:190px;background:#fff;border:3px dashed #B7BCA3;border-radius:22px;touch-action:none}
 .pad .ph{position:absolute;inset:0;display:grid;place-items:center;color:#B7BCA3;font-size:20px;pointer-events:none;letter-spacing:.2em}
@@ -97,10 +102,12 @@ label.ck span{font-size:20px;color:var(--ink);font-weight:500}
 
 <div class="card" style="padding-bottom:26px"><div class="hd"><span class="no">✎</span><b>簽署確認</b></div>
 <div class="it" id="g4"><label class="ck"><input type="checkbox" name="agree"><span>我已詳閱並同意以上所有條款</span></label></div>
-<label class="fld" id="g9">姓名<input type="text" id="nm" autocomplete="off"></label>
+<div class="it" id="g0"><b>來店紀錄</b><div class="row"><label class="ck"><input type="radio" name="visit" value="第一次來"><span>第一次來</span></label><label class="ck"><input type="radio" name="visit" value="有來過"><span>有來過</span></label></div></div>
+<label class="fld first" id="g9">姓名<input type="text" id="nm" autocomplete="off"></label>
 <label class="fld" id="g5">聯絡電話<input type="tel" id="tel" inputmode="tel"></label>
-<label class="fld" id="g6">出生日期<input type="date" id="bd"></label>
+<label class="fld first" id="g6">出生日期<input type="date" id="bd"></label>
 <label class="fld">施作日期<input type="date" id="td"></label>
+<label class="memo">會員備註<small>選填，例如：女兒代約、生日只記得月份</small><textarea id="memo" rows="2"></textarea></label>
 <div class="sig" id="g7"><b>立同意書人（簽名）</b><div class="pad"><canvas id="c1"></canvas><div class="ph">請在此簽名</div><button type="button">清除重簽</button></div></div>
 <div class="sig" id="g8" style="display:none"><b>法定代理人（簽名）</b><div class="note" style="margin:6px 0">未滿 18 歲需由法定代理人共同簽名</div><div class="pad"><canvas id="c2"></canvas><div class="ph">法定代理人簽名</div><button type="button">清除重簽</button></div></div></div>
 <div class="msg" id="msg"></div>
@@ -128,13 +135,14 @@ function val(n){var e=document.querySelector('input[name='+n+']:checked');return
 function chk(n){return !!document.querySelector('input[name='+n+']:checked')}
 function today(){var d=new Date();return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2)}
 function age(v){var b=new Date(v),n=new Date(),a=n.getFullYear()-b.getFullYear();if(n<new Date(n.getFullYear(),b.getMonth(),b.getDate()))a--;return a}
-function sync(){$('#g3').style.display=val('svc')==='補色'?'none':''}
-function minor(){var v=$('#bd').value;var m=!!v&&age(v)<18;$('#g8').style.display=m?'':'none';if(m&&!p2)p2=pad($('#c2'));return m}
-function save(){try{localStorage.setItem(K,JSON.stringify({nm:$('#nm').value,tel:$('#tel').value,bd:$('#bd').value,td:$('#td').value,amt:$('#amt').value,svc:val('svc'),pkg:val('pkg'),health:chk('health'),agree:chk('agree'),s1:p1.url(),s2:p2?p2.url():''}))}catch(e){}}
+function back(){return val('visit')==='有來過'}
+function sync(){$('#g3').style.display=val('svc')==='補色'?'none':'';document.body.classList.toggle('back',back());minor()}
+function minor(){var v=back()?'':$('#bd').value;var m=!!v&&age(v)<18;$('#g8').style.display=m?'':'none';if(m&&!p2)p2=pad($('#c2'));return m}
+function save(){try{localStorage.setItem(K,JSON.stringify({nm:$('#nm').value,tel:$('#tel').value,bd:$('#bd').value,td:$('#td').value,amt:$('#amt').value,svc:val('svc'),pkg:val('pkg'),visit:val('visit'),memo:$('#memo').value,health:chk('health'),agree:chk('agree'),s1:p1.url(),s2:p2?p2.url():''}))}catch(e){}}
 function setr(n,v){document.querySelectorAll('input[name='+n+']').forEach(function(e){e.checked=(e.value===v)})}
 function restore(){var s=null;try{s=JSON.parse(localStorage.getItem(K)||'null')}catch(e){}
  if(!s)return;$('#nm').value=s.nm||'';$('#tel').value=s.tel||'';$('#bd').value=s.bd||'';if(s.td)$('#td').value=s.td;$('#amt').value=s.amt||'';
- setr('svc',s.svc||'');setr('pkg',s.pkg||'');document.querySelector('input[name=health]').checked=!!s.health;document.querySelector('input[name=agree]').checked=!!s.agree;
+ setr('svc',s.svc||'');setr('pkg',s.pkg||'');setr('visit',s.visit||'');$('#memo').value=s.memo||'';document.querySelector('input[name=health]').checked=!!s.health;document.querySelector('input[name=agree]').checked=!!s.agree;
  sync();p1.load(s.s1);if(minor()&&s.s2)p2.load(s.s2)}
 $('#td').value=today();restore();
 var st=null;function later(){clearTimeout(st);st=setTimeout(save,600)}
@@ -144,7 +152,7 @@ window.addEventListener('pagehide',save);document.addEventListener('visibilitych
 try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
 $('#f').addEventListener('change',function(e){var t=e.target;
  if(t.name==='pkg'){$('#amt').value=t.value}
- if(t.name==='svc')sync();if(t.id==='bd')minor();save()});
+ if(t.name==='svc'||t.name==='visit')sync();if(t.id==='bd')minor();save()});
 function fmt(a){var n=a.replace(/[^\d]/g,'');return n&&n===a.trim()?Number(n).toLocaleString('en-US'):a.trim()}
 var CL=[['一','個人健康狀態聲明',['我確認目前沒有以下情形：心臟病、糖尿病、高血壓、血液傳染疾病（如愛滋、肝炎）、凝血功能不佳、長期服用抗凝血劑、嚴重貧血、蟹足腫體質、癲癇、免疫系統失調、皮膚重大疾病（如乾癬）。','目前身體狀態：我不在妊娠期、哺乳期、生理期，也沒有感冒發燒。','如實告知：我已誠實告知過往病史與過敏史。若因隱瞞而導致過敏或併發症，風險由本人自行承擔，與店家及操作者無涉。']],
 ['三','權益告知與風險確認',['設計確認：施作前已與老師完成眉型設計的溝通與確認。開始施作後，即視為同意該設計，恕不接受更換款式或退費；細部微調可於補色時討論。','成色差異：我瞭解紋繡效果會受體質、膚質、生活習慣及後期保養影響，留色程度因人而異。結痂脫落後的返色期、色澤不均或泛紅，皆屬正常修復現象。','肖像授權：我同意店家拍攝施作前後的照片與影片（含局部及全臉），並授權用於品牌社群、作品展示及技術交流。如不同意，請於施作前告知。']],
@@ -164,7 +172,10 @@ function makeImage(){
  var lg=$('#lg'),lh=300*lg.naturalHeight/lg.naturalWidth;x.drawImage(lg,(W-300)/2,y,300,lh);y+=lh+30;
  ft(58,900);x.fillStyle='#1a1a1a';x.textAlign='center';x.fillText('紋繡施作同意書',W/2,y+50);y+=92;x.textAlign='left';
  var svc=val('svc'),pkg=val('pkg'),amt=fmt($('#amt').value);
- card('✎','基本資料',function(){row('姓名',$('#nm').value.trim());row('聯絡電話',$('#tel').value.trim());row('出生日期',$('#bd').value.replace(/-/g,' / '));row('施作日期',$('#td').value.replace(/-/g,' / '))});
+ card('✎','基本資料',function(){var b=back();row('來店紀錄',val('visit'));
+  if(!b||$('#nm').value.trim())row('姓名',$('#nm').value.trim());row('聯絡電話',$('#tel').value.trim());
+  if(!b||$('#bd').value)row('出生日期',$('#bd').value.replace(/-/g,' / '));row('施作日期',$('#td').value.replace(/-/g,' / '));
+  var mm=$('#memo').value.trim();if(mm){ft(27,900);x.fillStyle='#5B6650';x.textAlign='left';x.fillText('會員備註',PX,y+34);y+=8;mm.split(/\n/).forEach(function(l){para(l||' ',PX+230,26,'#1a1a1a',500,IW-72-230,38)});y+=14}});
  function clause(i){var c=CL[i];card(c[0],c[1],function(){c[2].forEach(function(t){dash();y+=14;para(t,PX,22,'#69695f',400,IW-72,36);y+=12})})}
  clause(0);
  card('二','服務項目與補色方案',function(){dash();y+=22;var a=PX;['霧眉','飄眉','飄霧眉','補色'].forEach(function(s){box(a,y,svc===s);ft(27,500);x.fillStyle='#1a1a1a';x.fillText(s,a+46,y+27);a+=46+x.measureText(s).width+44});y+=52;
@@ -184,13 +195,14 @@ var blob=null,fname='';
 $('#f').addEventListener('submit',function(e){e.preventDefault();
  document.querySelectorAll('.err').forEach(function(x){x.classList.remove('err')});
  var miss=[],bad=[];function need(ok,id,t){if(!ok){miss.push(t);bad.push($(id))}}
- need(chk('health'),'#g1','健康狀態確認');need(chk('svc'),'#g2','施作項目');need(chk('agree'),'#g4','同意條款');need($('#nm').value.trim().length>0,'#g9','姓名');
- need($('#tel').value.replace(/\D/g,'').length>=8,'#g5','聯絡電話');need(!!$('#bd').value,'#g6','出生日期');need(p1.has(),'#g7','簽名');
+ need(chk('health'),'#g1','健康狀態確認');need(chk('svc'),'#g2','施作項目');need(chk('agree'),'#g4','同意條款');need(chk('visit'),'#g0','第一次來／有來過');need(p1.has(),'#g7','簽名');
  if(minor())need(p2&&p2.has(),'#g8','法定代理人簽名');
  var m=$('#msg');
  if(miss.length){m.style.display='block';m.textContent='還有項目沒填：'+miss.join('、');bad.forEach(function(x){x.classList.add('err')});bad[0].scrollIntoView({behavior:'smooth',block:'center'});return}
  m.style.display='none';
- var go=function(){var o=makeImage();fname=($('#td').value||today())+'_'+$('#nm').value.trim().replace(/[\\\/:*?"<>|\s]/g,'')+'_'+val('svc')+(val('svc')!=='補色'&&val('pkg')?'_'+val('pkg'):'')+'.png';
+ var blank=[];if(!back()&&!$('#nm').value.trim())blank.push('姓名');if($('#tel').value.replace(/\D/g,'').length<8)blank.push('聯絡電話');if(!back()&&!$('#bd').value)blank.push('出生日期');
+ if(blank.length&&!confirm(blank.join('、')+' 沒有填，確定要直接存圖片嗎？'))return;
+ var go=function(){var o=makeImage();var who=($('#nm').value.trim()||$('#tel').value.replace(/\D/g,'')||'未填姓名').replace(/[\\\/:*?"<>|\s]/g,'');fname=($('#td').value||today())+'_'+who+(back()?'_舊客':'')+'_'+val('svc')+(val('svc')!=='補色'&&val('pkg')?'_'+val('pkg'):'')+'.png';
   o.toBlob(function(b){blob=b;$('#pv').src=URL.createObjectURL(b);$('#sv').textContent=fname;$('#ov').style.display='block';$('#ov').scrollTop=0})};
  (document.fonts&&document.fonts.load?document.fonts.load('900 30px "Noto Sans TC"').then(function(){return document.fonts.load('400 22px "Noto Sans TC"')}).then(go,go):go())});
 $('#bk').onclick=function(){$('#ov').style.display='none'};
@@ -203,7 +215,7 @@ $('#sv2').onclick=function(){var s=$('#sv');if(!blob)return;var f=new File([blob
 var armed=false,t=null;
 $('#next').onclick=function(){var b=this;if(!armed){armed=true;b.textContent='再按一次，確定清空';t=setTimeout(function(){armed=false;b.textContent='下一位客人（清空表單）'},4000);return}
  clearTimeout(t);armed=false;b.textContent='下一位客人（清空表單）';try{localStorage.removeItem(K)}catch(e){}
- $('#f').reset();$('#td').value=today();sync();$('#g8').style.display='none';p1.size();if(p2)p2.size();window.scrollTo(0,0)};
+ $('#f').reset();$('#td').value=today();sync();document.body.classList.remove('back');$('#g8').style.display='none';p1.size();if(p2)p2.size();window.scrollTo(0,0)};
 })();
 </script>
 <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script></body></html>
