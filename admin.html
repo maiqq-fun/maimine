@@ -326,7 +326,13 @@ async function api(action, data, quiet){
       if(confirm(j.error)) return api(action, Object.assign({}, data, { force:true }), quiet);
       throw new Error("沒有變更");
     }
-    if(!j.ok) throw new Error(j.error || "操作失敗");
+    if(!j.ok){
+      if(/登入已過期/.test(j.error || "") && !liff.isInClient()){
+        try{ sessionStorage.removeItem("mm_relogin"); }catch(_){}
+        if(confirm("LINE 登入過期了，要重新登入嗎？\n（剛剛這個動作沒有存到，登入後請再做一次）")) relogin();
+      }
+      throw new Error(j.error || "操作失敗");
+    }
     if(j.bookings && DATA) Object.assign(DATA, j);
     if(j.bookings) LS.set("mm_admin_data", DATA || j);
     return j;
@@ -352,7 +358,13 @@ async function boot(){
     }
     try{ await liff.init({ liffId: id }); }
     catch(e){ LS.set("mm_admin_liff", null); throw e; }
-    if(!liff.isLoggedIn()){ liff.login({ redirectUri: location.href }); return; }
+    if(!liff.isLoggedIn()){ if(relogin()) return; throw new Error("LINE 登入沒有成功"); }
+    // 在 LINE 外面（主畫面、Safari）登入大約一小時就過期，過期或快過期就自動重新登入
+    if(!liff.isInClient()){
+      let exp = 0; try{ exp = (liff.getDecodedIDToken() || {}).exp || 0; }catch(_){}
+      if(exp * 1000 < Date.now() + 5 * 60 * 1000){ if(relogin()) return; throw new Error("LINE 登入已過期，自動重新登入沒有成功"); }
+    }
+    try{ sessionStorage.removeItem("mm_relogin"); }catch(_){}
     // 先顯示上次的資料（只能看，不能按），後台讀完再換成最新的
     const cached = LS.get("mm_admin_data");
     if(cached && cached.customers){ DATA = cached; applyTheme(SETT().theme); render(); document.body.classList.add("stale"); }
@@ -360,7 +372,25 @@ async function boot(){
     document.body.classList.remove("stale");
     applyTheme(SETT().theme);
     render();
-  }catch(err){ document.body.classList.remove("stale"); $("pane").innerHTML = `<div class="loading">載入失敗：${esc(err.message)}</div>`; }
+  }catch(err){
+    document.body.classList.remove("stale");
+    if(/登入已過期/.test(err.message) && !/自動重新登入/.test(err.message) && relogin()) return;
+    const id = LS.get("mm_admin_liff");
+    $("pane").innerHTML = `<div class="loading">載入失敗：${esc(err.message)}
+      ${id ? `<a class="btn" style="display:block;margin:18px auto 0;max-width:280px;text-decoration:none;text-align:center" href="https://liff.line.me/${esc(id)}">用 LINE 打開管理頁</a>` : ""}
+      <button type="button" class="btn g" style="display:block;margin:10px auto 0;max-width:280px;width:100%" onclick="location.reload()">重新整理</button></div>`;
+  }
+}
+
+/* 重新登入 LINE：在 LINE 外面才需要；同一次打開只自動試一次，避免一直跳轉 */
+function relogin(){
+  if(window.liff && liff.isInClient && liff.isInClient()) return false;
+  let n = 0; try{ n = Number(sessionStorage.getItem("mm_relogin")) || 0; }catch(_){}
+  if(n >= 1) return false;
+  try{ sessionStorage.setItem("mm_relogin", String(n + 1)); }catch(_){}
+  try{ if(liff.isLoggedIn()) liff.logout(); }catch(_){}
+  liff.login({ redirectUri: location.origin + location.pathname });
+  return true;
 }
 
 function render(){
