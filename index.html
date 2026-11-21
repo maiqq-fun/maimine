@@ -667,7 +667,8 @@ function renderMy(j, stale){
     if(b.status === "已預約"){
       note = b.changeBy && b.changeBy >= today ? `需要改期或取消，請在 <b>${mdOf(b.changeBy)}</b>前私訊麥麥，超過就不能更改囉。` : `已經超過改期期限囉，有問題請直接私訊麥麥。`;
       btns = (b.addr ? `<a class="mbtn main" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(b.addr)}" target="_blank" rel="noopener">Google 地圖導航</a>` : "") +
-             `<a class="mbtn" href="${location.pathname}?view=rules">術前須知</a>`;
+             `<a class="mbtn" href="${location.pathname}?view=rules">術前須知</a>` +
+             `<button type="button" class="mbtn full" data-ics="${esc(b.id)}" style="font:inherit;cursor:pointer">📅 加到行事曆</button>`;
     } else if(b.status === "待付定金"){
       note = `時間已經幫你留好了！${b.payBy ? `請在 <b>${esc(b.payBy)}</b> 前` : "請盡快"}付定金 $${dep.toLocaleString()}，付款後把截圖傳到聊天室。`;
       if(b.payImageUrl) btns = `<a class="mbtn main full" href="${esc(b.payImageUrl)}" target="_blank" rel="noopener">查看收款碼</a>`;
@@ -778,6 +779,12 @@ function renderMy(j, stale){
     }catch(_){ await copyText(shareMsg); mtoast("已幫你複製訊息，可以貼給朋友"); }
   };
   if($("shareCopy")) $("shareCopy").onclick = async () => { await copyText(shareMsg); mtoast("已複製！可以貼到 IG、LINE 或任何地方"); };
+  document.querySelectorAll("[data-ics]").forEach(x => x.onclick = () => {
+    // 用 Safari 打開行事曆檔，iPhone 會問要不要加入行事曆
+    const url = API + "?ics=" + encodeURIComponent(x.dataset.ics);
+    try{ if(liffReady && liff.openWindow){ liff.openWindow({ url, external:true }); return; } }catch(_){}
+    location.href = url;
+  });
   if($("bindGo")) $("bindGo").onclick = async () => {
     const phone = $("bindPhone").value.replace(/\D/g, "");
     if(!/^09\d{8}$/.test(phone)){ mtoast("請填 09 開頭的 10 碼手機"); return; }

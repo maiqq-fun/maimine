@@ -73,6 +73,22 @@ h2{font-size:19px;font-weight:900;margin:2px 0 4px;letter-spacing:.1em}
 textarea.fld{min-height:64px;resize:vertical}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .g3{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:8px}
+.g2>*,.g3>*{min-width:0}
+.fld[type=date],.fld[type=month]{-webkit-appearance:none;appearance:none;display:block;min-width:0;min-height:42px;text-align:left}
+.fld::-webkit-date-and-time-value{text-align:left}
+/* 預約月曆 */
+.bcal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:8px}
+.bcal .wd{text-align:center;font-size:12px;color:var(--muted);font-weight:700}
+.bcal button{border:0;min-height:62px;border-radius:10px;background:var(--chip);opacity:.4;padding:4px 3px;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:2px;overflow:hidden;color:var(--ink);font:inherit}
+.bcal button .n{font-weight:900;font-size:13px}
+.bcal button.open{background:#fff;opacity:1;box-shadow:inset 0 0 0 1.5px var(--edge)}
+.bcal button.has{opacity:1;background:#fff;box-shadow:inset 0 0 0 2px var(--ink)}
+.bcal button.today .n{background:var(--ink);color:var(--paper);border-radius:99px;padding:0 6px;align-self:flex-start}
+.bcal button.sel{outline:3px solid var(--sage);outline-offset:1px}
+.bcal button i{font-style:normal;font-size:10px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700}
+.bcal button i.w{color:var(--warn)}.bcal button i.d{color:var(--muted)}
+.bcnav{display:flex;align-items:center;justify-content:space-between;margin-top:4px}
+.bcnav button{border:0;background:var(--chip);border-radius:99px;width:36px;height:36px;font-size:18px;font-weight:900;cursor:pointer}
 .line{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:14px;padding:4px 0}
 .line.t{border-top:1px solid var(--pill);margin-top:6px;padding-top:9px;font-weight:900;font-size:16px}
 .line .minus{color:var(--ok);font-weight:800}
@@ -471,7 +487,7 @@ function adminBook(){
   const todo = sorted(DATA.bookings.filter(b => b.status === "待確認" || b.status === "待付定金"));
   const up = sorted(DATA.bookings.filter(b => b.status === "已預約"));
   const done = DATA.bookings.filter(b => ["已完成","已婉拒","已取消"].includes(b.status)).sort((a,b) => (b.date+b.start).localeCompare(a.date+a.start));
-  const chips = [["todo",`待處理 ${todo.length}`],["agenda",`行程 ${up.length}`],["done","已結束"]].map(([k,t]) => `<button type="button" class="chip${UI.bview===k?" sel":""}" data-bv="${k}">${t}</button>`).join("");
+  const chips = [["todo",`待處理 ${todo.length}`],["agenda",`行程 ${up.length}`],["cal","📅 月曆"],["done","已結束"]].map(([k,t]) => `<button type="button" class="chip${UI.bview===k?" sel":""}" data-bv="${k}">${t}</button>`).join("");
   let body = "";
   if(UI.bview === "agenda"){
     const ds = [...new Set(up.map(b => b.date))];
@@ -479,6 +495,8 @@ function adminBook(){
       const label = d === on ? "今天" : d === addD(on,1) ? "明天" : d < on ? "還沒結帳" : "";
       return `<div class="sec">${fmtW(d)}${label ? `　<span style="color:${d < on ? "var(--warn)" : "var(--ink)"}">${label}</span>` : ""}</div>` + up.filter(b => b.date === d).map(b => bkCard(b, on, true)).join("");
     }).join("") || `<div class="empty">接下來沒有預約</div>`;
+  } else if(UI.bview === "cal"){
+    body = bookCal(on);
   } else if(UI.bview === "todo"){
     body = todo.map(b => bkCard(b, on, false)).join("") || `<div class="empty">沒有要處理的預約 🎉</div>`;
   } else {
@@ -487,12 +505,38 @@ function adminBook(){
   $("pane").innerHTML = `<div class="top"><h2>預約</h2><button type="button" class="chip dark" id="addbk">＋ 新增預約</button></div>
     ${UI.addBk ? addBkForm() : ""}<div class="chips" style="margin-top:6px">${chips}</div>${body}`;
   $("pane").querySelectorAll("[data-bv]").forEach(x => x.onclick = () => { UI.bview = x.dataset.bv; UI.open = null; UI.editing = null; render(); });
+  if(UI.bview === "cal"){
+    $("pane").querySelectorAll("[data-cm]").forEach(x => x.onclick = () => { UI.bcm = addM(UI.bcm + "-01", Number(x.dataset.cm)).slice(0,7); UI.bcd = null; render(); });
+    $("pane").querySelectorAll("[data-cd]").forEach(x => x.onclick = () => { UI.bcd = UI.bcd === x.dataset.cd ? null : x.dataset.cd; UI.open = null; UI.editing = null; render(); });
+  }
   $("addbk").onclick = () => { UI.addBk = !UI.addBk; render(); };
   $("pane").querySelectorAll("[data-bdel]").forEach(x => x.onclick = () => { const b = DATA.bookings.find(y => y.id === x.dataset.bdel);
     if(!confirm(`刪除 ${b.name} ${fmtW(b.date)} ${b.start} 這筆？${b.status === "已完成" ? "\n結帳紀錄會留在客人的紀錄裡，要刪的話到客人頁面刪。" : ""}\n刪掉就找不回來。`)) return;
     run(() => api("adminUpdate", { id:b.id, op:"delete" }), "已刪除"); });
   if(UI.addBk) wireAddBk();
   wireBk(); wireCheckout();
+}
+
+/* 預約月曆：只標出公開的預約日和有預約的日子，其他（倉、休、沒開放）一律反灰 */
+function bookCal(on){
+  UI.bcm = UI.bcm || on.slice(0,7);
+  const m = UI.bcm, [y, mm] = m.split("-").map(Number);
+  const first = new Date(y, mm-1, 1).getDay(), dcount = new Date(y, mm, 0).getDate();
+  const M = DATA.months.find(x => x.month === m), open = M && M.visible !== false ? M.openDays || [] : [];
+  const shown = ["待確認","待付定金","已預約","已完成"];
+  const list = DATA.bookings.filter(b => shown.includes(b.status) && b.date.startsWith(m)).sort((a,b) => (a.date+a.start).localeCompare(b.date+b.start));
+  let cal = WD.map(w => `<div class="wd">${w}</div>`).join("") + "<div></div>".repeat(first);
+  for(let d = 1; d <= dcount; d++){
+    const ds = `${m}-${pad(d)}`, bs = list.filter(b => b.date === ds);
+    const cls = [bs.length ? "has" : open.includes(d) ? "open" : "", ds === on ? "today" : "", UI.bcd === ds ? "sel" : ""].filter(Boolean).join(" ");
+    cal += `<button type="button" class="${cls}" data-cd="${ds}"><span class="n">${d}</span>${bs.slice(0,2).map(b => { const k = b.status === "已完成" ? "d" : b.status === "已預約" ? "" : "w"; return `<i class="${k}">${esc(b.start)}</i><i class="${k}" style="font-weight:900">${esc(b.name)}</i>`; }).join("")}${bs.length > 2 ? `<i>＋${bs.length - 2}</i>` : ""}</button>`;
+  }
+  const day = UI.bcd && UI.bcd.startsWith(m) ? list.filter(b => b.date === UI.bcd) : [];
+  return `<div class="card" style="padding:12px">
+      <div class="bcnav"><button type="button" data-cm="-1" aria-label="上個月">‹</button><b>${y} 年 ${mm} 月</b><button type="button" data-cm="1" aria-label="下個月">›</button></div>
+      <div class="bcal">${cal}</div>
+      <p class="fine2" style="margin:8px 0 0">白底＝開放預約的日子；黑框＝有預約；<span style="color:var(--warn)">橘字</span>＝還沒成立。點日子看當天的預約。</p></div>
+    ${UI.bcd ? `<div class="sec">${fmtW(UI.bcd)}</div>` + (day.map(b => ACTIVE.includes(b.status) ? bkCard(b, on, true) : `<div class="card"><b class="bk-time">${b.start}</b>　${esc(b.name)}<span class="meta">・${esc(b.service)}・已完成</span></div>`).join("") || `<div class="empty">這天沒有預約</div>`) : ""}`;
 }
 
 function addBkForm(){
