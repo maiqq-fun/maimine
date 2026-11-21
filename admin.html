@@ -772,8 +772,8 @@ function timeline(c){
 
 /* ---------- 施作／補色紀錄：新增、修改、刪除 ---------- */
 const draftOf = v => v ? { id:v.id, date:fmtDot(v.date), kind:v.kind === "補色" ? "補色" : "施作", service:v.service || (v.kind === "補色" ? "補色" : "霧眉"),
-    paid:v.paid ?? "", months:Number(v.months) || 0, base:v.base ?? "", again:v.again ?? "", voucherUsed:!!v.voucherUsed, usedOn:fmtDot(v.usedOn), price:v.price ?? "", revenue:v.revenue ?? "" }
-  : { id:"", date:"", kind:"施作", service:"霧眉", paid:CFG().trialPrice, months:0, base:CFG().trialPrice, again:"", voucherUsed:false, usedOn:"", price:"", revenue:"" };
+    paid:v.paid ?? "", months:Number(v.months) || 0, base:v.base ?? "", again:v.again ?? "", voucherUsed:!!v.voucherUsed, usedOn:fmtDot(v.usedOn), price:v.price ?? "", revenue:v.revenue ?? "", loc:v.loc || "", rent:v.rent ?? "" }
+  : { id:"", date:"", kind:"施作", service:"霧眉", paid:CFG().trialPrice, months:0, base:CFG().trialPrice, again:"", voucherUsed:false, usedOn:"", price:"", revenue:"", loc:"", rent:"" };
 function visitForm(){
   const d = UI.vdraft, isT = d.kind === "施作";
   const mOpts = [...new Set([0].concat(CFG().addons.map(a => Number(a.months)), [Number(d.months) || 0]))].sort((a,b) => a-b);
@@ -787,6 +787,8 @@ function visitForm(){
       <p class="fine2" style="margin:4px 0 0">補差價用「包套金額 − 當時體驗價」算；續補價空白就用現在的設定</p>
       ${Number(d.months) ? `<label class="chk"><input type="checkbox" data-vf="voucherUsed"${d.voucherUsed ? " checked" : ""}>補色券已經用過了</label>${d.voucherUsed ? `<span class="lab">使用日<small>選填</small></span>${dayIn("vf-used", d.usedOn)}` : ""}` : ""}`
     : `<span class="lab">補色價<small>用補色券就填 0</small></span><input class="fld" data-vf="price" inputmode="numeric" value="${esc(d.price)}">`}
+    <div class="g2"><div><span class="lab">工作室<small>可以空白</small></span><select class="fld" data-vf="loc">${[""].concat(CFG().locations.map(l => l.name), d.loc && !CFG().locations.some(l => l.name === d.loc) ? [d.loc] : []).map(x => `<option value="${esc(x)}"${x === d.loc ? " selected" : ""}>${x ? esc(x) : "（空白）"}</option>`).join("")}</select></div>
+      <div><span class="lab">場地租金<small>會同步到記帳</small></span><input class="fld" data-vf="rent" inputmode="numeric" value="${esc(d.rent)}" placeholder="0"></div></div>
     <span class="lab">實收<small>空白＝跟${isT ? "包套金額" : "補色價"}一樣</small></span><input class="fld" data-vf="revenue" inputmode="numeric" value="${esc(d.revenue)}">
     <div class="btns"><button type="button" class="btn" id="vf-save">儲存</button><button type="button" class="btn g" id="vf-x">取消</button></div>
     ${d.id ? `<button type="button" class="mini" id="vf-del" style="color:var(--red);margin-top:8px">刪除這筆紀錄</button>` : ""}</div>`;
@@ -807,7 +809,7 @@ function wireVisit(c){
     const usedOn = d.voucherUsed ? parseDay(d.usedOn) : ""; if(usedOn === null){ toast("使用日看不懂，可以空著", true); return; }
     const N = x => String(x ?? "").trim() === "" ? "" : Number(String(x).replace(/[^\d]/g,"")) || 0;
     run(async () => { await api("adminVisit", { visit:{ id:d.id, cid:c.id, date, kind:d.kind, service:d.service, paid:N(d.paid), months:Number(d.months) || 0, base:N(d.base), again:N(d.again),
-      voucherUsed:!!d.voucherUsed, usedOn, price:N(d.price), revenue:N(d.revenue) } }); UI.editV = null; }, "紀錄已儲存");
+      voucherUsed:!!d.voucherUsed, usedOn, price:N(d.price), revenue:N(d.revenue), loc:d.loc || "", rent:N(d.rent) || 0 } }); UI.editV = null; }, "紀錄已儲存");
   };
   $("vf-x").onclick = () => { UI.editV = null; render(); };
   if($("vf-del")) $("vf-del").onclick = () => { if(!confirm("刪除這筆紀錄？刪掉就找不回來。\n（結帳時自動記的場地租金也會一起刪）")) return;
@@ -876,13 +878,15 @@ function adminCust(){
   const right = c => { const t = touchup(c.id, on), cr = credit(c, on); let s; if(!t.v) s = "還沒施作"; else if(t.months && !t.v.voucherUsed) s = on <= t.freeEnd ? `補色券至 ${fmt(t.freeEnd)}` : `補色券逾期`; else if(t.price !== null) s = `續補 ${money(t.price)}`; else s = "重新施作"; return `<span${soon(c)?' style="color:var(--warn)"':""}>${s}</span>${cr.bal ? `<br>抵用金 ${money(cr.bal)}` : ""}`; };
   $("pane").innerHTML = `<h2>客人</h2>
     <input class="fld" id="q" placeholder="🔍 搜尋姓名、手機、IG、LINE 名稱、推薦碼" value="${esc(UI.q)}" style="margin-bottom:8px">
-    <div class="chips">${[["all",`全部 ${DATA.customers.length}`],["soon",`補色券快到期 ${DATA.customers.filter(soon).length}`],["noline",`未綁 LINE ${DATA.customers.filter(c=>!c.userId).length}`],["bday",`🎂 ${Number(on.slice(5,7))}月壽星 ${DATA.customers.filter(c=>bdayThisMonth(c,on)).length}`]].map(([k,t]) => `<button type="button" class="chip${UI.filter===k?" sel":""}" data-fl="${k}">${t}</button>`).join("")}<button type="button" class="chip dark" id="addc">＋ 補登客人</button></div>
-    ${UI.addCust ? addCustForm() : ""}
+    <div class="chips">${[["all",`全部 ${DATA.customers.length}`],["soon",`補色券快到期 ${DATA.customers.filter(soon).length}`],["noline",`未綁 LINE ${DATA.customers.filter(c=>!c.userId).length}`],["bday",`🎂 ${Number(on.slice(5,7))}月壽星 ${DATA.customers.filter(c=>bdayThisMonth(c,on)).length}`]].map(([k,t]) => `<button type="button" class="chip${UI.filter===k?" sel":""}" data-fl="${k}">${t}</button>`).join("")}<button type="button" class="chip dark" id="addc">＋ 補登客人</button><button type="button" class="chip dark" id="impc">📋 批次補登</button></div>
+    ${UI.addCust ? addCustForm() : ""}${UI.imp ? impForm() : ""}
     ${list.map(c => { const v = lastTreat(c.id); return `<button type="button" class="cl" data-det="${c.id}"><div><div class="n">${esc(c.name)}${c.userId ? '<span class="b ln">LINE</span>' : '<span class="b no">未綁 LINE</span>'}${c.phone ? "" : '<span class="b ph">沒有手機</span>'}</div><div class="m">${esc(c.phone || c.ig || "")}${c.bday ? `・🎂 ${bdayTxt(c)}` : ""}</div><div class="m">${esc(c.code)}${v ? `・${fmt(v.date)} ${esc(v.service)}${v.source==="補登"?" 補登":""}` : ""}</div></div><div class="r">${right(c)}</div></button>`; }).join("") || `<div class="empty">找不到</div>`}`;
   const q = $("q"); q.oninput = () => { UI.q = q.value; const pos = q.selectionStart; render(); const n = $("q"); n.focus(); n.setSelectionRange(pos,pos); };
   $("pane").querySelectorAll("[data-fl]").forEach(b => b.onclick = () => { UI.filter = b.dataset.fl; render(); });
   $("pane").querySelectorAll("[data-det]").forEach(b => b.onclick = () => { UI.detail = b.dataset.det; render(); window.scrollTo({top:0}); });
   $("addc").onclick = () => { UI.addCust = !UI.addCust; render(); };
+  $("impc").onclick = () => { UI.imp = !UI.imp; render(); };
+  wireImp();
   if($("ac-save")) $("ac-save").onclick = () => {
     const name = $("ac-name").value.trim(); if(!name){ toast("請填姓名", true); return; }
     const bday = parseDay($("ac-bday").value); if(bday === null){ toast("生日看不懂，請打像 1995.3.8 這樣", true); return; }
@@ -905,6 +909,145 @@ function addCustForm(){
     ${DAY_HINT}
     <label class="chk"><input type="checkbox" id="ac-used">補色券已經用過了</label>
     <div class="btns"><button type="button" class="btn" id="ac-save">新增</button><button type="button" class="btn g" id="ac-x">取消</button></div></div>`;
+}
+/* ---------- 批次補登：從試算表整片貼上 ---------- */
+const IMP_RENT = 0, IMP_ADDON = 2500, IMP_AGAIN_WITH = 2500, IMP_AGAIN_WITHOUT = 3000, IMP_MONTHS = 12;
+const IMP_HEAD = ["姓名","手機","IG／LINE","生日","日期","種類","項目","體驗價","補色券","補色價","工作室","租金","備註"];
+const IMP_COLS = { name:["姓名","名字"], phone:["手機","電話"], ig:["IG","LINE"], bday:["生日"], date:["日期","施作日期"], kind:["種類"], service:["項目"],
+  base:["體驗價"], voucher:["補色券"], price:["補色價"], paid:["包套金額"], again:["續補價"], revenue:["實收"], loc:["工作室","地點"], rent:["租金","場地租金"], note:["備註"] };
+function impSplit(text){
+  const out = []; let row = [], cell = "", q = false;
+  const sep = text.split(/\r?\n/)[0].includes("\t") ? "\t" : ",";
+  for(let i = 0; i < text.length; i++){
+    const ch = text[i];
+    if(q){ if(ch === '"'){ if(text[i+1] === '"'){ cell += '"'; i++; } else q = false; } else cell += ch; continue; }
+    if(ch === '"' && cell === "") q = true;
+    else if(ch === sep){ row.push(cell); cell = ""; }
+    else if(ch === "\n" || ch === "\r"){ if(ch === "\r" && text[i+1] === "\n") i++; row.push(cell); out.push(row); row = []; cell = ""; }
+    else cell += ch;
+  }
+  row.push(cell); out.push(row);
+  return out.map(r => r.map(c => c.trim())).filter(r => r.some(c => c));
+}
+function impParse(text){
+  const all = impSplit(text);
+  if(all.length < 2) return { err:"至少要有表頭和一列資料" };
+  const keys = all[0].map(h => { const k = h.replace(/\s/g,"").toUpperCase(); return Object.keys(IMP_COLS).find(x => IMP_COLS[x].some(a => k.startsWith(a.toUpperCase()))) || null; });
+  if(!keys.includes("name") || !keys.includes("date")) return { err:"第一列要是表頭，至少要有「姓名」和「日期」" };
+  const on = today(), groups = [];
+  let prev = null;
+  all.slice(1).forEach((r, i) => {
+    const o = { line:i + 2 }; keys.forEach((k, j) => { if(k) o[k] = r[j] || ""; });
+    if(!o.name && !o.phone && prev){ o.name = prev.name; o.phone = prev.phone; }
+    prev = o;
+    o.phone = (o.phone || "").replace(/\D/g,"");
+    if(o.phone.length === 9 && o.phone[0] === "9") o.phone = "0" + o.phone;
+    let g = groups.find(g => (o.phone && g.phone === o.phone) || (g.name === o.name && (!o.phone || !g.phone)));
+    if(!g){ g = { name:o.name, phone:o.phone, ig:"", bday:"", note:"", rows:[], errs:[] }; groups.push(g); }
+    if(o.phone && !g.phone) g.phone = o.phone;
+    if(o.ig && !g.ig) g.ig = o.ig;
+    if(o.note && !g.note) g.note = o.note;
+    if(o.bday && !g.bday){ const b = parseDay(o.bday); if(b) g.bday = b; else g.errs.push(`第 ${o.line} 列：生日「${o.bday}」看不懂，要有年份（例如 1995.3.8），不知道年份就空著`); }
+    if(o.date || o.kind || o.service) g.rows.push(o);
+  });
+  const num = s => { s = String(s ?? "").trim(); return s === "" ? null : Number(s.replace(/[^\d]/g,"")) || 0; };
+  const yes = s => /^(有|是|v|y|yes|✓|✔|o|ok|12|加購)/i.test(String(s || "").trim());
+  groups.forEach(g => {
+    if(!g.name) g.errs.push("有一列沒有姓名");
+    const byPhone = g.phone && DATA.customers.find(c => c.phone === g.phone);
+    const byName = DATA.customers.filter(c => c.name.trim() === g.name);
+    g.cust = byPhone || (byName.length === 1 && (!byName[0].phone || !g.phone) ? byName[0] : null);
+    if(!g.cust && byName.length) g.warn = `已經有叫「${g.name}」的客人，但手機不同，會新增成另一位`;
+    const old = g.cust ? visitsOf(g.cust.id) : [];
+    const treats = old.filter(v => v.kind === "施作").map(v => ({ date:v.date, months:Number(v.months) || 0, again:Number(v.again) || (Number(v.months) ? CFG().againWith : CFG().againWithout), used:!!v.voucherUsed, dbId:v.id }));
+    g.out = []; g.useVouchers = [];
+    g.rows.forEach(o => { o.dt = parseDay(o.date); });
+    g.rows.slice().sort((a,b) => (a.dt || "").localeCompare(b.dt || "")).forEach(o => {
+      const e = { line:o.line, date:o.dt, raw:o };
+      if(!o.dt){ e.err = `日期「${o.date}」看不懂`; g.out.push(e); return; }
+      if(o.dt > on){ e.err = "日期在未來"; g.out.push(e); return; }
+      e.kind = /補色/.test(o.kind) || (!o.kind && /補色/.test(o.service)) ? "補色" : "施作";
+      if(g.cust && old.some(v => v.date === o.dt && (v.kind === "補色" ? "補色" : "施作") === e.kind) || g.out.some(x => x.date === o.dt && x.kind === e.kind && !x.err)){ e.skip = "已經有這筆，略過"; g.out.push(e); return; }
+      const rent = num(o.rent); e.rent = rent === null ? IMP_RENT : rent; e.loc = (o.loc || "").trim();
+      const rev = num(o.revenue);
+      if(e.kind === "施作"){
+        e.service = (o.service || "").trim(); if(!e.service){ e.err = "缺「項目」（霧眉、飄眉…）"; g.out.push(e); return; }
+        e.base = num(o.base); if(!e.base){ e.err = "缺「體驗價」"; g.out.push(e); return; }
+        e.months = yes(o.voucher) ? IMP_MONTHS : 0;
+        e.paid = num(o.paid) || e.base + (e.months ? IMP_ADDON : 0);
+        e.again = num(o.again) || (e.months ? IMP_AGAIN_WITH : IMP_AGAIN_WITHOUT);
+        e.voucherUsed = false; e.usedOn = ""; e.revenue = rev === null ? e.paid : rev;
+        treats.push({ date:e.date, months:e.months, again:e.again, used:false, ref:e });
+      } else {
+        const t = treats.filter(t => t.date < e.date).sort((a,b) => b.date.localeCompare(a.date))[0];
+        const freeOk = t && t.months && !t.used && e.date <= addM(t.date, t.months);
+        const set = num(o.price);
+        if(set !== null) e.price = set;
+        else if(!t){ e.err = "找不到之前的施作，請填「補色價」"; g.out.push(e); return; }
+        else if(freeOk) e.price = 0;
+        else if(e.date <= addM(t.date, 12)) e.price = t.again;
+        else { e.err = "離上次施作超過一年，請填「補色價」"; g.out.push(e); return; }
+        if(e.price === 0 && freeOk){ t.used = true; e.usedVoucher = true; if(t.ref){ t.ref.voucherUsed = true; t.ref.usedOn = e.date; } else g.useVouchers.push({ id:t.dbId, usedOn:e.date }); }
+        e.revenue = rev === null ? e.price : rev;
+      }
+      g.out.push(e);
+    });
+    g.out.sort((a,b) => (a.date || "").localeCompare(b.date || ""));
+  });
+  const errs = groups.reduce((n,g) => n + g.errs.length + g.out.filter(e => e.err).length, 0);
+  return { groups, errs };
+}
+function impForm(){
+  const P = UI.impP;
+  let body = "";
+  if(P && P.err) body = `<div class="note warn">${esc(P.err)}</div>`;
+  else if(P){
+    const nNew = P.groups.filter(g => !g.cust).length, nV = P.groups.reduce((n,g) => n + g.out.filter(e => !e.err && !e.skip).length, 0);
+    body = `<div class="note ${P.errs ? "warn" : "ok"}">${P.errs ? `有 <b>${P.errs}</b> 個問題要先修正（紅字），改好表格再貼一次。` : `新客人 <b>${nNew}</b> 位、已有的客人 <b>${P.groups.length - nNew}</b> 位，共 <b>${nV}</b> 筆紀錄。確認沒問題就按下面的「確定匯入」。`}</div>
+    ${P.groups.map(g => `<div class="card" style="margin:10px 0 0;padding:12px"><div class="top"><b>${esc(g.name || "（沒有姓名）")}</b>${g.cust ? '<span class="tag g">已有，加到她的紀錄</span>' : '<span class="tag ok">新客人</span>'}</div>
+      <div class="fine2" style="margin-top:2px">${esc([g.phone, g.ig, g.bday ? "🎂 " + fmtDot(g.bday) : ""].filter(Boolean).join("・") || "沒有手機")}</div>
+      ${g.warn ? `<div class="fine2" style="color:var(--warn)">${esc(g.warn)}</div>` : ""}
+      ${g.errs.map(x => `<div class="fine2" style="color:var(--red)">${esc(x)}</div>`).join("")}
+      ${g.out.map(e => `<div style="border-top:1px solid var(--pill);margin-top:8px;padding-top:6px;font-size:13px;line-height:1.6${e.skip ? ";opacity:.5" : ""}">
+        <b>${e.date ? fmtDot(e.date) : esc(e.raw.date || "（沒有日期）")}</b>　${e.err ? `<span style="color:var(--red)">第 ${e.line} 列：${esc(e.err)}</span>` : e.skip ? esc(e.skip)
+          : e.kind === "施作" ? `${esc(e.service)}・${money(e.paid)}<br><span class="fine2" style="margin:0">${e.months ? `含補色券 ${e.months} 個月${e.voucherUsed ? `（${fmtDot(e.usedOn)} 已用）` : "（還沒用）"}` : "單次"}・體驗價 ${money(e.base)}・續補 ${money(e.again)}</span>`
+          : `補色・${money(e.price)}${e.usedVoucher ? "（用補色券）" : ""}`}
+        ${!e.err && !e.skip ? (x => x ? `<span class="fine2" style="margin:0;display:block">${x}</span>` : "")([e.loc ? esc(e.loc) : "", e.rent ? "租金 " + money(e.rent) : "", e.revenue !== (e.kind === "施作" ? e.paid : e.price) ? "實收 " + money(e.revenue) : ""].filter(Boolean).join("・")) : ""}</div>`).join("")}
+    </div>`).join("")}
+    ${P.errs ? "" : `<div class="btns"><button type="button" class="btn" id="imp-go">確定匯入</button></div>`}`;
+  }
+  return `<div class="card"><b>批次補登</b>
+    <p class="hint" style="margin:2px 0 6px">在試算表（Google 試算表、Numbers、Excel）填好，<b>連同第一列表頭</b>整片複製，貼到下面。一列＝一次來店，同一個人來好幾次就寫好幾列。</p>
+    <ul class="fine2" style="padding-left:18px;margin:0 0 8px">
+      <li>補色券填「有」：包套金額＝體驗價＋${money(IMP_ADDON)}，${IMP_MONTHS} 個月，續補 ${money(IMP_AGAIN_WITH)}；沒有：續補 ${money(IMP_AGAIN_WITHOUT)}</li>
+      <li>補色價空白會自動算：補色券期限內用券 $0，否則用續補價</li>
+      <li>支出：「設定 → 估算支出」那幾個月會用「每位客人 × 金額」算，租金可以空白；有填租金才會另外記一筆。工作室也可以空白，之後在紀錄裡「✏️ 修改」</li>
+      <li>手機一樣（或沒手機但姓名一樣）的客人會加到她原本的紀錄，已經有的同一天紀錄會略過</li>
+    </ul>
+    <button type="button" class="mini" id="imp-head">📋 複製表頭（貼到試算表第一列）</button>
+    <textarea class="fld" id="imp-text" rows="6" placeholder="從試算表複製後貼在這裡" style="margin-top:6px;font-size:13px">${esc(UI.impText || "")}</textarea>
+    <div class="btns"><button type="button" class="btn g" id="imp-pv">預覽</button><button type="button" class="btn g" id="imp-x">關閉</button></div>
+    ${body}</div>`;
+}
+function wireImp(){
+  if(!$("imp-text")) return;
+  $("imp-text").oninput = () => { UI.impText = $("imp-text").value; };
+  $("imp-x").onclick = () => { UI.imp = false; UI.impP = null; render(); };
+  $("imp-head").onclick = async () => { const t = IMP_HEAD.join("\t"); try{ await navigator.clipboard.writeText(t); toast("已複製表頭"); }catch(_){ UI.impText = t; render(); toast("沒辦法直接複製，已幫你放進輸入框"); } };
+  $("imp-pv").onclick = () => { UI.impText = $("imp-text").value; UI.impP = impParse(UI.impText); render(); };
+  if($("imp-go")) $("imp-go").onclick = () => {
+    const P = UI.impP;
+    const groups = P.groups.map(g => ({
+      cust: g.cust ? { id:g.cust.id, phone:g.phone, ig:g.ig, bday:g.bday, note:g.note } : { name:g.name, phone:g.phone, ig:g.ig, bday:g.bday, note:g.note },
+      visits: g.out.filter(e => !e.err && !e.skip).map(e => e.kind === "施作"
+        ? { date:e.date, kind:"施作", service:e.service, paid:e.paid, months:e.months, base:e.base, again:e.again, voucherUsed:e.voucherUsed, usedOn:e.usedOn, loc:e.loc, rent:e.rent, revenue:e.revenue }
+        : { date:e.date, kind:"補色", price:e.price, loc:e.loc, rent:e.rent, revenue:e.revenue }),
+      useVouchers: g.useVouchers }));
+    const nV = groups.reduce((n,g) => n + g.visits.length, 0);
+    if(!confirm(`確定匯入 ${groups.length} 位客人、${nV} 筆紀錄？`)) return;
+    run(async () => { const j = await api("adminImport", { groups }); UI.imp = false; UI.impP = null; UI.impText = "";
+      toast(`已匯入：新客人 ${j.imported.customers} 位、紀錄 ${j.imported.visits} 筆`); });
+  };
 }
 function custDetail(c, on){
   if(UI.crFor !== c.id){ UI.crFor = c.id; UI.cr = crBlank(); UI.editV = null; }
