@@ -96,6 +96,8 @@ section{margin-top:30px}
 .field label .opt-l{font-weight:400;color:var(--muted);font-size:13px;margin-left:4px}
 .field input,.field textarea{border:1.5px solid var(--edge);background:var(--field);border-radius:14px;padding:10px 14px;font-size:16px;width:100%}
 .field textarea{min-height:76px;resize:vertical}
+.field input[type=date]{-webkit-appearance:none;appearance:none;display:block;min-width:0;max-width:100%;min-height:46px;text-align:left}
+.field input::-webkit-date-and-time-value{text-align:left}
 .field input:focus,.field textarea:focus{border-color:var(--ink);outline:none}
 .err{color:var(--danger);font-size:13px;min-height:0}
 .price-line{font-size:14px;margin-top:8px;color:var(--muted)}
@@ -284,7 +286,7 @@ details.rules[open] summary::after{content:"收合"}
       <div class="notes" id="notes"></div>
     </details>
     <div class="checks">
-      <label class="check"><input type="checkbox" id="c-health"><span>我沒有術前須知中「無法施作」的任何狀況<small>不確定的話請先在備註寫下，麥會跟你確認</small></span></label>
+      <label class="check"><input type="checkbox" id="c-health"><span>我沒有術前須知中<span style="white-space:nowrap">「無法施作」的任何狀況</span><small>不確定的話請先在備註寫下，麥會跟你確認</small></span></label>
       <label class="check"><input type="checkbox" id="c-agree"><span>我已詳閱術前須知，並同意遵守約定<small id="agreeSmall">包含定金與取消、改期的規定</small></span></label>
     </div>
     <div class="err" id="e-check"></div>
@@ -395,19 +397,40 @@ function defaultStart(opts, session){
 }
 
 /* ---------- 載入 ---------- */
+/* 存在這支手機上的小東西（LIFF ID、上次的「我的預約」），讓下次打開比較快 */
+const LS = {
+  get: k => { try{ return JSON.parse(localStorage.getItem(k)); }catch(_){ return null; } },
+  set: (k, v) => { try{ localStorage.setItem(k, JSON.stringify(v)); }catch(_){} }
+};
+function applyPub(){
+  S = D.settings;
+  applyTheme(S.theme);
+  if(D.cfg){
+    document.querySelectorAll(".lineurl").forEach(a => { if(D.cfg.lineUrl) a.href = D.cfg.lineUrl; });
+    if(D.cfg.igUrl) $("igBtn").href = D.cfg.igUrl;
+  }
+  if(D.liff && D.liff.booking) LS.set("mm_liff", D.liff.booking);
+}
+async function initLiff(id){
+  if(liffReady || !id || !window.liff) return;
+  try{ await liff.init({ liffId: id }); liffReady = true; }catch(e){ console.error(e); }
+}
 async function boot(){
   try{
-    const r = await fetch(API); D = await r.json();
+    const cachedId = LS.get("mm_liff");
+    const pub = fetch(API).then(r => r.json());
+    if(VIEW === "my" && cachedId){
+      // 我的預約：不用等預約頁的資料，直接登入 LINE 讀自己的資料
+      pub.then(d => { if(d && d.ok){ D = d; applyPub(); } }).catch(() => {});
+      await initLiff(cachedId);
+      if(liffReady){ await bootMy(); return; }
+    }
+    const liffP = initLiff(cachedId);   // 跟讀資料同時進行
+    D = await pub;
     if(!D.ok) throw new Error(D.error || "載入失敗");
-    S = D.settings;
-    applyTheme(S.theme);
-    if(D.cfg){
-      document.querySelectorAll(".lineurl").forEach(a => { if(D.cfg.lineUrl) a.href = D.cfg.lineUrl; });
-      if(D.cfg.igUrl) $("igBtn").href = D.cfg.igUrl;
-    }
-    if(D.liff && D.liff.booking && window.liff){
-      try{ await liff.init({ liffId: D.liff.booking }); liffReady = true; }catch(e){ console.error(e); }
-    }
+    applyPub();
+    await liffP;
+    if(!liffReady) await initLiff(D.liff && D.liff.booking);
     if(VIEW === "my"){ await bootMy(); return; }
     $("loading").style.display = "none";
     const withDays = D.months.find(m => m.openDays.some(d => dayAvail(dateStr(m.month,d))));
@@ -436,7 +459,7 @@ function selectMonth(month){
   promo.style.display = (M.tag || M.items || M.plans.length) ? "" : "none";
   promo.innerHTML = (M.tag ? `<span class="tag">${esc(M.tag)}</span>` : "") +
     (M.items ? `<div class="items">${esc(M.items)}</div>` : "") +
-    M.plans.map(p => `<div class="row"><span>${esc(p.name)}</span><span class="price">$${Number(p.price).toLocaleString()}${p.was ? `<s>$${Number(p.was).toLocaleString()}</s>` : ""}</span></div>`).join("");
+    M.plans.map(p => Number(p.price) ? `<div class="row"><span>${esc(p.name)}</span><span class="price">$${Number(p.price).toLocaleString()}${p.was ? `<s>$${Number(p.was).toLocaleString()}</s>` : ""}</span></div>` : `<div class="row" style="white-space:pre-line"><span>${esc(p.name)}</span></div>`).join("");
   $("notes").textContent = M.notes || "";
   $("advHint").textContent = `需提前 ${S.minAdvanceDays} 天預約，下面是目前還能約的日子。`;
   const first = M.openDays.map(d => dateStr(M.month,d)).find(dayAvail);
@@ -556,11 +579,11 @@ function renderSvc(){
     o.onclick = () => { state.svc = v; if(v==="補色") state.plan = null; renderAll(); };
     box.appendChild(o);
   });
-  $("planWrap").style.display = (state.svc==="補色" || !M.plans.length) ? "none" : "";
+  $("planWrap").style.display = (state.svc==="補色" || !M.plans.length || M.noPlan) ? "none" : "";
   const pb = $("plan"); pb.innerHTML = "";
   M.plans.forEach((p,i) => {
     const o = document.createElement("button"); o.type = "button"; o.className = "opt zh" + (state.plan===i?" sel":"");
-    o.innerHTML = `${esc(p.name)}<small>$${Number(p.price).toLocaleString()}${p.was ? `（原價 $${Number(p.was).toLocaleString()}）` : ""}</small>`;
+    o.innerHTML = `${esc(p.name)}${Number(p.price) ? `<small>$${Number(p.price).toLocaleString()}${p.was ? `（原價 $${Number(p.was).toLocaleString()}）` : ""}</small>` : ""}`;
     o.setAttribute("aria-pressed", state.plan===i);
     o.onclick = () => { state.plan = i; renderAll(); };
     pb.appendChild(o);
@@ -575,7 +598,10 @@ function renderSvc(){
     else if(t.price === null) pl.textContent = "距離上次施作已超過 12 個月，視為重新施作，價格由麥確認後告知";
     else pl.innerHTML = `${Number(state.day.slice(5,7))}/${Number(state.day.slice(8))} 來補色：<b>${money(t.price)}</b>（${t.tag}）${ME.credit && ME.credit.bal ? `，可以用抵用金 ${money(ME.credit.bal)} 折抵` : ""}`;
   }
-  else if(state.plan!==null && M.plans[state.plan]){
+  else if(state.plan!==null && M.plans[state.plan] && !M.noPlan && !Number(M.plans[state.plan].price)){
+    pl.innerHTML = `定金 $${S.deposit.toLocaleString()} 當日折抵，價格麥麥會跟你確認`;
+  }
+  else if(state.plan!==null && M.plans[state.plan] && !M.noPlan){
     const p = M.plans[state.plan];
     pl.innerHTML = `活動價 <b>$${Number(p.price).toLocaleString()}</b>，定金 $${S.deposit.toLocaleString()} 當日折抵，現場再付 <b>$${(p.price-S.deposit).toLocaleString()}</b>`;
   } else pl.textContent = state.svc==="現場決定" ? "項目可以到現場再決定，方案先選一個就好" : "";
@@ -607,11 +633,25 @@ async function bootMy(){
   $("hero").innerHTML = `<h1 class="logo small"><img src="${LOGO}" alt="Maimine Studio" width="560" height="270"></h1>`;
   if(!liffReady){ $("loading").textContent = "請從 LINE 打開這個頁面。"; return; }
   if(!liff.isLoggedIn()){ liff.login({ redirectUri: location.origin + location.pathname + "?view=my" }); return; }
-  const r = await fetch(API, { method:"POST", body: JSON.stringify({ action:"my", idToken: liff.getIDToken() }) });
-  const j = await r.json();
-  if(!j.ok) throw new Error(j.error || "讀取失敗");
+  let key = "mm_my";
+  try{ const t = liff.getDecodedIDToken(); if(t && t.sub) key += "_" + t.sub; }catch(_){}
+  const cached = LS.get(key);
+  if(cached && cached.ok){ $("loading").style.display = "none"; renderMy(cached, true); }
+  let j;
+  try{
+    const r = await fetch(API, { method:"POST", body: JSON.stringify({ action:"my", idToken: liff.getIDToken() }) });
+    j = await r.json();
+    if(!j.ok) throw new Error(j.error || "讀取失敗");
+  }catch(err){
+    if(cached && cached.ok){ if($("myStale")) $("myStale").textContent = "目前連不到，顯示的是上次的資料"; return; }
+    throw err;
+  }
+  LS.set(key, j);
   $("loading").style.display = "none";
+  renderMy(j);
   checkFriend();
+}
+function renderMy(j, stale){
   const C = j.cfg, today = j.today;
   const card = b => {
     const [txt, cls] = STATUS_TXT[b.status] || [b.status, "gone"];
@@ -706,9 +746,23 @@ async function bootMy(){
     return `<div class="ti"><div class="d">${ymd(e.date)}</div><div class="t">${t}</div><div class="s">${esc(s)}</div></div>`;
   }).join("");
 
+  /* 舊客綁定 */
+  let bindHtml = "";
+  if(j.canBind){
+    const b = j.bind || {};
+    if(b.status === "待確認") bindHtml = `<div class="mcard"><div class="mtop"><span class="mpill pend">綁定申請中</span></div><div class="mnote" style="margin-top:0">已經收到你的綁定申請（${esc(b.at)}），麥麥確認後會用 LINE 通知你，之後打開這頁就能看到你的補色券、紀錄和抵用金 🤍</div></div>`;
+    else bindHtml = `<div class="mcard"><div class="mtop"><span class="mpill ok">以前來找過麥麥？</span></div>
+      <p style="font-size:14px;margin:4px 0 10px;line-height:1.7">填你當時留的手機，麥麥確認後，就能在這裡看到你的補色券、紀錄和抵用金。</p>
+      ${b.status === "已婉拒" ? `<div class="mwarn" style="margin:0 0 10px">上次的申請沒有成功，可以再送一次，或直接私訊麥麥。</div>` : ""}
+      <div class="field"><label for="bindName">姓名</label><input id="bindName" value="${esc(j.name || "")}" autocomplete="name"></div>
+      <div class="field"><label for="bindPhone">手機</label><input id="bindPhone" inputmode="tel" placeholder="0912345678" autocomplete="tel"></div>
+      <button type="button" class="mnew" id="bindGo" style="margin-top:0;width:100%;border:0">綁定我的紀錄</button></div>`;
+  }
   const name = j.name ? `嗨 ${esc(j.name)}，` : "";
   $("my").innerHTML = `<h2 class="mh">我的預約</h2>
     <p class="mhi">${name}這是你的預約${j.customer ? "、補色券、抵用金" : ""}和紀錄 🤍</p>
+    ${stale ? `<p class="fine2" id="myStale" style="margin:-4px 0 10px">更新中…</p>` : ""}
+    ${bindHtml}
     <div class="msec">即將到來</div>
     ${j.upcoming.length ? j.upcoming.map(card).join("") : `<div class="placeholder" style="margin-bottom:14px">目前沒有預約</div>`}
     ${voucher}${creditHtml}${referHtml}
@@ -724,6 +778,17 @@ async function bootMy(){
     }catch(_){ await copyText(shareMsg); mtoast("已幫你複製訊息，可以貼給朋友"); }
   };
   if($("shareCopy")) $("shareCopy").onclick = async () => { await copyText(shareMsg); mtoast("已複製！可以貼到 IG、LINE 或任何地方"); };
+  if($("bindGo")) $("bindGo").onclick = async () => {
+    const phone = $("bindPhone").value.replace(/\D/g, "");
+    if(!/^09\d{8}$/.test(phone)){ mtoast("請填 09 開頭的 10 碼手機"); return; }
+    const btn = $("bindGo"); btn.disabled = true; btn.textContent = "送出中…";
+    try{
+      const r = await fetch(API, { method:"POST", body: JSON.stringify({ action:"bindReq", idToken: liff.getIDToken(), phone, name: $("bindName").value.trim() }) });
+      const k = await r.json();
+      if(!k.ok) throw new Error(k.error || "送出失敗");
+      j.bind = { status:"待確認", at:"剛剛" }; renderMy(j); mtoast("已送出，麥麥確認後會通知你 🤍");
+    }catch(err){ mtoast(err.message); btn.disabled = false; btn.textContent = "綁定我的紀錄"; }
+  };
 }
 async function copyText(t){
   try{ await navigator.clipboard.writeText(t); return; }catch(_){}
@@ -740,7 +805,7 @@ async function doSubmit(){
   const fail = (id,msg,el) => { $(id).textContent = msg; if(msg){ ok = false; first = first || el; } };
   ["e-name","e-phone","e-check","e-submit"].forEach(id => $(id).textContent = "");
   if(!state.day){ ok = false; first = first || $("days"); }
-  const needPlan = state.svc && state.svc!=="補色" && M.plans.length > 0;
+  const needPlan = state.svc && state.svc!=="補色" && M.plans.length > 0 && !M.noPlan;
   if(!state.svc || (needPlan && state.plan===null)){ ok = false; $("priceLine").innerHTML = `<span style="color:var(--danger)">請選擇預約項目${state.svc && needPlan ? "和方案" : ""}</span>`; first = first || $("svc"); }
   const name = $("name").value.trim(), phone = $("phone").value.replace(/[\s-]/g,"");
   fail("e-name", name ? "" : "請填寫姓名", $("name"));

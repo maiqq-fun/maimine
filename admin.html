@@ -99,6 +99,7 @@ textarea.fld{min-height:64px;resize:vertical}
 .cl .r{text-align:right;font-size:12px;color:var(--muted);flex:none}
 .cl.pick{box-shadow:inset 0 0 0 2px var(--ink)}
 .b{font-size:10.5px;font-weight:800;border-radius:6px;padding:1px 6px;margin-left:4px;vertical-align:1px;white-space:nowrap}
+.b.sp{background:#E6E1EE;color:#5B4C7A}
 .b.ln{background:var(--okbg);color:var(--ok)}.b.no{background:var(--warnbg);color:var(--warn)}.b.ph{background:var(--chip);color:var(--muted)}
 .kpis{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
 .kpi{background:var(--field);border:1px solid var(--edge);border-radius:16px;padding:10px 12px}
@@ -162,6 +163,8 @@ details.adv summary{cursor:pointer;font-weight:900;padding:10px 0;font-size:14px
 .toast.err{background:var(--red)}
 .busy{position:fixed;inset:0;z-index:70;background:rgba(240,239,234,.6);display:none;align-items:center;justify-content:center;font-weight:900}
 .busy.show{display:flex}
+body.stale #pane,body.stale #tabs{pointer-events:none;opacity:.55}
+body.stale::before{content:"更新中…";position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:80;background:var(--ink);color:var(--paper);border-radius:99px;padding:6px 16px;font-weight:900;font-size:13px}
 .busy span{background:var(--ink);color:var(--paper);border-radius:99px;padding:10px 20px}
 .empty{color:var(--muted);background:var(--chip);border-radius:14px;padding:12px;text-align:center;font-size:13.5px}
 .sec{font-size:12.5px;color:var(--muted);font-weight:800;letter-spacing:.12em;margin:16px 0 8px}
@@ -183,7 +186,7 @@ details.adv summary{cursor:pointer;font-weight:900;padding:10px 0;font-size:14px
 .legend{display:grid;gap:4px;font-size:12.5px;color:var(--muted);margin-top:10px}
 .legend span{display:flex;align-items:center;gap:8px}
 .preview{width:100%;border-radius:12px;border:1px solid var(--edge);display:block;margin-top:8px}
-.plan{display:grid;grid-template-columns:1fr 78px 78px 28px;gap:6px;align-items:end}
+.plan{display:grid;grid-template-columns:1fr 1fr 28px;gap:6px;align-items:end;border-top:1px solid var(--pill);padding-top:6px;margin-top:6px}.plan>div:first-child{grid-column:1/-1}
 .theme{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .tc{display:flex;gap:10px;align-items:center;background:var(--chip);border-radius:12px;padding:8px 10px;cursor:pointer}
 .tc input{width:38px;height:38px;border:0;padding:0;background:none;border-radius:10px;flex:none;cursor:pointer}
@@ -325,6 +328,7 @@ async function api(action, data, quiet){
     }
     if(!j.ok) throw new Error(j.error || "操作失敗");
     if(j.bookings && DATA) Object.assign(DATA, j);
+    if(j.bookings) LS.set("mm_admin_data", DATA || j);
     return j;
   } finally { $("busy").classList.remove("show"); }
 }
@@ -333,17 +337,30 @@ async function run(fn, okMsg){
   catch(err){ toast(err.message, true); }
 }
 
+const LS = {
+  get: k => { try{ return JSON.parse(localStorage.getItem(k)); }catch(_){ return null; } },
+  set: (k, v) => { try{ localStorage.setItem(k, JSON.stringify(v)); }catch(_){} }
+};
 async function boot(){
   try{
-    const pub = await (await fetch(API)).json();
-    const id = pub.liff && pub.liff.admin;
-    if(!id){ $("pane").innerHTML = `<div class="loading">還沒設定管理頁的 LIFF ID（ADMIN_LIFF_ID）。</div>`; return; }
-    await liff.init({ liffId: id });
+    let id = LS.get("mm_admin_liff");
+    if(!id){
+      const pub = await (await fetch(API)).json();
+      id = pub.liff && pub.liff.admin;
+      if(!id){ $("pane").innerHTML = `<div class="loading">還沒設定管理頁的 LIFF ID（ADMIN_LIFF_ID）。</div>`; return; }
+      LS.set("mm_admin_liff", id);
+    }
+    try{ await liff.init({ liffId: id }); }
+    catch(e){ LS.set("mm_admin_liff", null); throw e; }
     if(!liff.isLoggedIn()){ liff.login({ redirectUri: location.href }); return; }
+    // 先顯示上次的資料（只能看，不能按），後台讀完再換成最新的
+    const cached = LS.get("mm_admin_data");
+    if(cached && cached.customers){ DATA = cached; applyTheme(SETT().theme); render(); document.body.classList.add("stale"); }
     DATA = await api("adminLoad", {}, true);
+    document.body.classList.remove("stale");
     applyTheme(SETT().theme);
     render();
-  }catch(err){ $("pane").innerHTML = `<div class="loading">載入失敗：${esc(err.message)}</div>`; }
+  }catch(err){ document.body.classList.remove("stale"); $("pane").innerHTML = `<div class="loading">載入失敗：${esc(err.message)}</div>`; }
 }
 
 function render(){
@@ -752,7 +769,10 @@ function creditCard(c, on){
   if(cr.lost) body = `<div class="big" style="color:#A9ABA3">$0</div><div class="note warn">原本的 ${money(cr.lost)} 已在 ${fmt(cr.exp)} 到期</div>`;
   else if(!cr.bal) body = `<div class="big">$0</div>`;
   else { const left = days(on, cr.exp); body = `<div class="big">${money(cr.bal)}</div><div class="rows"><span>有效至</span><span>${fmt(cr.exp)}${left <= 62 ? `<span class="tag warn">剩 ${left} 天</span>` : ""}</span></div>`; }
-  return `<div class="card"><div class="top"><span class="pill s">抵用金</span></div>${body}</div>`;
+  if(UI.editCb === c.id) body = `<div class="g2"><div><span class="lab">餘額</span><input class="fld" id="cb-amt" inputmode="numeric" value="${Number(c.credit) || 0}"></div><div><span class="lab">有效至<small>空白＝今天起 ${CFG().creditMonths} 個月</small></span>${dayIn("cb-exp", fmtDot(c.creditExp))}</div></div>
+    <p class="fine2" style="margin:4px 0 0">直接改數字，不會傳 LINE，也不會多一筆紀錄。</p>
+    <div class="btns"><button type="button" class="btn" id="cb-save">儲存</button><button type="button" class="btn g" id="cb-x">取消</button></div>`;
+  return `<div class="card"><div class="top"><span class="pill s">抵用金</span>${UI.editCb === c.id ? "" : `<button type="button" class="mini" id="cb-open">✏️ 修改餘額／期限</button>`}</div>${body}</div>`;
 }
 function timeline(c){
   const ev = [];
@@ -764,10 +784,43 @@ function timeline(c){
     if(v.loc) s += `・${v.loc}${v.room ? " " + v.room : ""}${v.rent ? " 租金 " + money(v.rent) : ""}`;
     ev.push({ d:v.date || "", id:v.id, t:`${v.kind === "施作" ? esc(v.service) + "・" + money(v.paid) : "補色"}<span class="src">${v.source === "補登" ? "補登" : v.source === "手動" ? "手動" : v.source ? "線上預約" : "試算表"}</span>`, s });
   });
-  DATA.creditLog.filter(x => x.cid === c.id).forEach(x => ev.push({ d:x.date, t:x.amt > 0 ? `抵用金 +${money(x.amt)}` : `抵用金 ${money(x.amt)}`, s:x.why }));
+  DATA.creditLog.forEach((x, i) => { if(x.cid !== c.id) return;
+    if(UI.editCr === i){ ev.push({ d:x.date || "", crForm:x }); return; }
+    ev.push({ d:x.date, cr:i, t:x.amt > 0 ? `抵用金 +${money(x.amt)}` : `抵用金 ${money(x.amt)}`, s:x.why }); });
   ev.sort((a,b) => b.d.localeCompare(a.d));
-  return ev.length ? `<div class="tl">${ev.map(e => e.form ? `<div style="margin:0 0 11px -18px">${visitForm()}</div>` :
-    `<div class="ti"><div class="d">${e.d ? fmt(e.d) : "（沒有日期）"}${e.id ? `<button type="button" class="mini" data-ev="${e.id}" style="padding:0 0 0 8px;font-size:12px">✏️ 修改</button>` : ""}</div><div class="t">${e.t}</div><div class="s">${esc(e.s)}</div></div>`).join("")}</div>` : `<div class="empty">還沒有紀錄</div>`;
+  return ev.length ? `<div class="tl">${ev.map(e => e.crForm ? `<div style="margin:0 0 11px -18px">${crEditForm(e.crForm)}</div>` : e.form ? `<div style="margin:0 0 11px -18px">${visitForm()}</div>` :
+    `<div class="ti"><div class="d">${e.d ? fmt(e.d) : "（沒有日期）"}${e.id ? `<button type="button" class="mini" data-ev="${e.id}" style="padding:0 0 0 8px;font-size:12px">✏️ 修改</button>` : ""}${e.cr !== undefined ? `<button type="button" class="mini" data-ecr="${e.cr}" style="padding:0 0 0 8px;font-size:12px">✏️ 修改</button>` : ""}</div><div class="t">${e.t}</div><div class="s">${esc(e.s)}</div></div>`).join("")}</div>` : `<div class="empty">還沒有紀錄</div>`;
+}
+
+/* ---------- 抵用金紀錄：修改、刪除 ---------- */
+function crEditForm(x){
+  return `<div class="stu edit"><b>修改抵用金紀錄</b>
+    <div class="g2"><div><span class="lab">日期</span>${dayIn("ce-date", fmtDot(x.date))}</div><div><span class="lab">金額<small>扣的打負數</small></span><input class="fld" id="ce-amt" inputmode="numeric" value="${esc(x.amt)}"></div></div>
+    <span class="lab">原因<small>客人在「我的預約」看得到</small></span><input class="fld" id="ce-why" value="${esc(x.why)}">
+    <label class="chk"><input type="checkbox" id="ce-adj" checked>目前餘額跟著一起調整</label>
+    <div class="btns"><button type="button" class="btn" id="ce-save">儲存</button><button type="button" class="btn g" id="ce-x">取消</button></div>
+    <button type="button" class="mini" id="ce-del" style="color:var(--red);margin-top:8px">刪除這筆抵用金紀錄</button></div>`;
+}
+function wireCrEdit(c){
+  document.querySelectorAll("[data-ecr]").forEach(b => b.onclick = () => { UI.editCr = Number(b.dataset.ecr); UI.editV = null; render(); });
+  if($("cb-open")) $("cb-open").onclick = () => { UI.editCb = c.id; render(); };
+  if($("cb-x")) $("cb-x").onclick = () => { UI.editCb = null; render(); };
+  if($("cb-save")) $("cb-save").onclick = () => {
+    const exp = parseDay($("cb-exp").value); if(exp === null){ toast("日期看不懂，請打像 2027.5.12 這樣", true); return; }
+    const amt = Number($("cb-amt").value.replace(/\D/g,"")) || 0;
+    run(async () => { await api("adminCust", { cust:{ id:c.id, credit:amt, creditExp:exp } }); UI.editCb = null; }, "抵用金已更新");
+  };
+  if(!$("ce-save")) return;
+  const x = DATA.creditLog[UI.editCr];
+  const old = { cid:x.cid, date:x.date, amt:x.amt, why:x.why };
+  $("ce-x").onclick = () => { UI.editCr = null; render(); };
+  $("ce-save").onclick = () => {
+    const date = parseDay($("ce-date").value); if(!date){ toast("日期看不懂，請打像 2026.5.12 這樣", true); return; }
+    const amt = Number($("ce-amt").value.replace(/[^\d-]/g,"")) || 0; if(!amt){ toast("請填金額", true); return; }
+    run(async () => { await api("adminCreditEdit", { old, date, amt, why:$("ce-why").value, adjust:$("ce-adj").checked }); UI.editCr = null; }, "已儲存");
+  };
+  $("ce-del").onclick = () => { if(!confirm(`刪除這筆抵用金紀錄（${money(x.amt)}）？${$("ce-adj").checked ? "\n目前餘額會一起扣回來。" : ""}`)) return;
+    run(async () => { await api("adminCreditEdit", { old, remove:true, adjust:$("ce-adj").checked }); UI.editCr = null; }, "已刪除"); };
 }
 
 /* ---------- 施作／補色紀錄：新增、修改、刪除 ---------- */
@@ -873,19 +926,21 @@ function adminCust(){
   let list = DATA.customers.slice().sort((a,b) => (b.created || "").localeCompare(a.created || ""));
   if(UI.filter === "soon") list = list.filter(soon);
   if(UI.filter === "noline") list = list.filter(c => !c.userId);
+  if(UI.filter === "special") list = list.filter(c => c.special);
   if(UI.filter === "bday") list = list.filter(c => bdayThisMonth(c, on)).sort((a,b) => a.bday.slice(8).localeCompare(b.bday.slice(8)));
   if(UI.q) list = list.filter(c => [c.name, c.phone, c.ig, c.lineName, c.code].join(" ").toUpperCase().includes(UI.q.toUpperCase()));
   const right = c => { const t = touchup(c.id, on), cr = credit(c, on); let s; if(!t.v) s = "還沒施作"; else if(t.months && !t.v.voucherUsed) s = on <= t.freeEnd ? `補色券至 ${fmt(t.freeEnd)}` : `補色券逾期`; else if(t.price !== null) s = `續補 ${money(t.price)}`; else s = "重新施作"; return `<span${soon(c)?' style="color:var(--warn)"':""}>${s}</span>${cr.bal ? `<br>抵用金 ${money(cr.bal)}` : ""}`; };
-  $("pane").innerHTML = `<h2>客人</h2>
+  $("pane").innerHTML = `<h2>客人</h2>${bindCards()}
     <input class="fld" id="q" placeholder="🔍 搜尋姓名、手機、IG、LINE 名稱、推薦碼" value="${esc(UI.q)}" style="margin-bottom:8px">
-    <div class="chips">${[["all",`全部 ${DATA.customers.length}`],["soon",`補色券快到期 ${DATA.customers.filter(soon).length}`],["noline",`未綁 LINE ${DATA.customers.filter(c=>!c.userId).length}`],["bday",`🎂 ${Number(on.slice(5,7))}月壽星 ${DATA.customers.filter(c=>bdayThisMonth(c,on)).length}`]].map(([k,t]) => `<button type="button" class="chip${UI.filter===k?" sel":""}" data-fl="${k}">${t}</button>`).join("")}<button type="button" class="chip dark" id="addc">＋ 補登客人</button><button type="button" class="chip dark" id="impc">📋 批次補登</button></div>
+    <div class="chips">${[["all",`全部 ${DATA.customers.length}`],["soon",`補色券快到期 ${DATA.customers.filter(soon).length}`],["noline",`未綁 LINE ${DATA.customers.filter(c=>!c.userId).length}`],["bday",`🎂 ${Number(on.slice(5,7))}月壽星 ${DATA.customers.filter(c=>bdayThisMonth(c,on)).length}`],["special",`⭐ 特殊 ${DATA.customers.filter(c=>c.special).length}`]].map(([k,t]) => `<button type="button" class="chip${UI.filter===k?" sel":""}" data-fl="${k}">${t}</button>`).join("")}<button type="button" class="chip dark" id="addc">＋ 補登客人</button><button type="button" class="chip dark" id="impc">📋 批次補登</button></div>
     ${UI.addCust ? addCustForm() : ""}${UI.imp ? impForm() : ""}
-    ${list.map(c => { const v = lastTreat(c.id); return `<button type="button" class="cl" data-det="${c.id}"><div><div class="n">${esc(c.name)}${c.userId ? '<span class="b ln">LINE</span>' : '<span class="b no">未綁 LINE</span>'}${c.phone ? "" : '<span class="b ph">沒有手機</span>'}</div><div class="m">${esc(c.phone || c.ig || "")}${c.bday ? `・🎂 ${bdayTxt(c)}` : ""}</div><div class="m">${esc(c.code)}${v ? `・${fmt(v.date)} ${esc(v.service)}${v.source==="補登"?" 補登":""}` : ""}</div></div><div class="r">${right(c)}</div></button>`; }).join("") || `<div class="empty">找不到</div>`}`;
+    ${list.map(c => { const v = lastTreat(c.id); return `<button type="button" class="cl" data-det="${c.id}"><div><div class="n">${esc(c.name)}${c.special ? '<span class="b sp">⭐ 特殊</span>' : ""}${c.userId ? '<span class="b ln">LINE</span>' : '<span class="b no">未綁 LINE</span>'}${c.phone ? "" : '<span class="b ph">沒有手機</span>'}</div><div class="m">${esc(c.phone || c.ig || "")}${c.bday ? `・🎂 ${bdayTxt(c)}` : ""}</div><div class="m">${esc(c.code)}${v ? `・${fmt(v.date)} ${esc(v.service)}${v.source==="補登"?" 補登":""}` : ""}</div></div><div class="r">${right(c)}</div></button>`; }).join("") || `<div class="empty">找不到</div>`}`;
   const q = $("q"); q.oninput = () => { UI.q = q.value; const pos = q.selectionStart; render(); const n = $("q"); n.focus(); n.setSelectionRange(pos,pos); };
   $("pane").querySelectorAll("[data-fl]").forEach(b => b.onclick = () => { UI.filter = b.dataset.fl; render(); });
   $("pane").querySelectorAll("[data-det]").forEach(b => b.onclick = () => { UI.detail = b.dataset.det; render(); window.scrollTo({top:0}); });
   $("addc").onclick = () => { UI.addCust = !UI.addCust; render(); };
   $("impc").onclick = () => { UI.imp = !UI.imp; render(); };
+  wireBinds();
   wireImp();
   if($("ac-save")) $("ac-save").onclick = () => {
     const name = $("ac-name").value.trim(); if(!name){ toast("請填姓名", true); return; }
@@ -910,6 +965,29 @@ function addCustForm(){
     <label class="chk"><input type="checkbox" id="ac-used">補色券已經用過了</label>
     <div class="btns"><button type="button" class="btn" id="ac-save">新增</button><button type="button" class="btn g" id="ac-x">取消</button></div></div>`;
 }
+/* ---------- 舊客在「我的預約」申請綁定 ---------- */
+function bindCards(){
+  const list = DATA.binds || [];
+  if(!list.length) return "";
+  const opts = DATA.customers.slice().sort((a,b) => a.name.localeCompare(b.name, "zh-Hant"));
+  return list.map(b => { const m = custOf(b.cid);
+    return `<div class="card" style="border-color:var(--warn)"><div class="top"><b>🔗 綁定申請</b><span class="meta">${esc(b.at)}</span></div>
+      <div class="rows" style="grid-template-columns:70px 1fr"><span>填的姓名</span><span>${esc(b.name || "—")}</span><span>LINE</span><span>${esc(b.lineName)}</span><span>手機</span><span>${esc(b.phone)}</span></div>
+      <div class="note ${m ? "ok" : "warn"}">${m ? `手機對到：<b>${esc(m.name)}</b>${m.userId ? "（已經綁了別的 LINE）" : ""}` : "找不到這支手機，請在下面選是哪一位客人"}</div>
+      <span class="lab">綁定到</span><select class="fld" id="bd-${b.id}"><option value="">請選擇</option>${opts.map(c => `<option value="${c.id}"${m && m.id === c.id ? " selected" : ""}>${esc(c.name)}${c.phone ? "・" + esc(c.phone) : ""}${c.userId ? "（已綁 LINE）" : ""}</option>`).join("")}</select>
+      <div class="btns"><button type="button" class="btn" data-bok="${b.id}">同意綁定</button><button type="button" class="btn g" data-bno="${b.id}">婉拒</button></div></div>`; }).join("");
+}
+function wireBinds(){
+  document.querySelectorAll("[data-bok]").forEach(x => x.onclick = () => { const id = x.dataset.bok, cid = $("bd-" + id).value;
+    if(!cid){ toast("請選擇要綁定的客人", true); return; }
+    if(!confirm(`把這個 LINE 綁定到「${custOf(cid).name}」？\n綁定後她會收到 LINE 通知，在「我的預約」就看得到她的紀錄和抵用金。`)) return;
+    run(() => api("adminBind", { id, cid }), "已綁定，已通知客人"); });
+  document.querySelectorAll("[data-bno]").forEach(x => x.onclick = () => { const id = x.dataset.bno;
+    const msg = prompt("婉拒這筆申請。要傳給她的訊息（空白就不傳）：", "找不到你的紀錄耶，可以私訊麥麥你上次來的日期嗎？🤍");
+    if(msg === null) return;
+    run(() => api("adminBind", { id, reject:true, msg }), "已婉拒"); });
+}
+
 /* ---------- 批次補登：從試算表整片貼上 ---------- */
 const IMP_RENT = 0, IMP_ADDON = 2500, IMP_AGAIN_WITH = 2500, IMP_AGAIN_WITHOUT = 3000, IMP_MONTHS = 12;
 const IMP_HEAD = ["姓名","手機","IG／LINE","生日","日期","種類","項目","體驗價","補色券","補色價","工作室","租金","備註"];
@@ -1050,15 +1128,16 @@ function wireImp(){
   };
 }
 function custDetail(c, on){
-  if(UI.crFor !== c.id){ UI.crFor = c.id; UI.cr = crBlank(); UI.editV = null; }
+  if(UI.crFor !== c.id){ UI.crFor = c.id; UI.cr = crBlank(); UI.editV = null; UI.editCr = null; UI.editCb = null; }
   const ref = c.refBy ? custName(c.refBy) : "—";
   const refd = DATA.customers.filter(x => x.refBy === c.id).map(x => x.name).join("、") || "—";
   const upc = DATA.bookings.filter(b => b.cid === c.id && ACTIVE.includes(b.status));
   $("pane").innerHTML = `<button type="button" class="back" id="back">← 客人列表</button>
-    <div class="card"><div class="top"><b style="font-size:19px">${esc(c.name)}</b>${c.userId ? `<span class="b ln">已綁 LINE：${esc(c.lineName)}</span>` : '<span class="b no">未綁 LINE</span>'}</div>
+    <div class="card"><div class="top"><b style="font-size:19px">${esc(c.name)}${c.special ? ' <span class="b sp">⭐ 特殊</span>' : ""}</b>${c.userId ? `<span class="b ln">已綁 LINE：${esc(c.lineName)}</span>` : '<span class="b no">未綁 LINE</span>'}</div>
       ${UI.editC === c.id ? `<div class="g2"><div><span class="lab">姓名</span><input class="fld" id="ec-name" value="${esc(c.name)}"></div><div><span class="lab">手機</span><input class="fld" id="ec-phone" inputmode="tel" value="${esc(c.phone)}"></div></div>
         <div class="g2"><div><span class="lab">生日</span>${dayIn("ec-bday", fmtDot(c.bday))}</div><div><span class="lab">IG</span><input class="fld" id="ec-ig" value="${esc(c.ig)}"></div></div>
-        <span class="lab">備註</span><input class="fld" id="ec-note" value="${esc(c.note)}">
+        <span class="lab">備註<small>例如：女兒代約，同意書是媽媽簽</small></span><textarea class="fld" id="ec-note" rows="3">${esc(c.note)}</textarea>
+        <label class="chk"><input type="checkbox" id="ec-sp"${c.special ? " checked" : ""}>⭐ 特殊客人（會出現在「特殊」分類）</label>
         <div class="btns"><button type="button" class="btn" id="ec-save">儲存</button><button type="button" class="btn g" id="ec-x">取消</button></div>
         <button type="button" class="mini" id="ec-del" style="color:var(--red);margin-top:10px">刪除這位客人</button>`
       : `<div class="rows" style="grid-template-columns:70px 1fr"><span>手機</span><span>${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : "（沒有）"}</span><span>生日</span><span>${c.bday ? `🎂 ${fmt(c.bday)}${bdayThisMonth(c, on) ? '<span class="tag warn">這個月</span>' : ""}` : "—"}</span><span>推薦碼</span><span><b>${esc(c.code)}</b></span><span>IG</span><span>${esc(c.ig || "—")}</span><span>備註</span><span>${esc(c.note || "—")}</span><span>推薦人</span><span>${esc(ref)}</span><span>推薦了</span><span>${esc(refd)}</span></div>
@@ -1068,18 +1147,18 @@ function custDetail(c, on){
     <div class="top" style="margin:16px 0 8px"><span class="sec" style="margin:0">紀錄</span><button type="button" class="mini" id="v-new">＋ 補一筆紀錄</button></div>
     ${UI.editV === "new" ? visitForm() : ""}
     <div class="card">${timeline(c)}</div>`;
-  $("back").onclick = () => { UI.detail = null; UI.editC = null; UI.editV = null; render(); };
+  $("back").onclick = () => { UI.detail = null; UI.editC = null; UI.editV = null; UI.editCr = null; UI.editCb = null; render(); };
   if($("ec-open")) $("ec-open").onclick = () => { UI.editC = c.id; render(); };
   if($("ec-x")) $("ec-x").onclick = () => { UI.editC = null; render(); };
   if($("ec-save")) $("ec-save").onclick = () => {
     const bday = parseDay($("ec-bday").value); if(bday === null){ toast("生日看不懂，請打像 1995.3.8 這樣", true); return; }
-    run(async () => { await api("adminCust", { cust:{ id:c.id, name:$("ec-name").value.trim() || c.name, phone:$("ec-phone").value, bday, ig:$("ec-ig").value, note:$("ec-note").value } }); UI.editC = null; }, "已儲存");
+    run(async () => { await api("adminCust", { cust:{ id:c.id, name:$("ec-name").value.trim() || c.name, phone:$("ec-phone").value, bday, ig:$("ec-ig").value, note:$("ec-note").value, special:$("ec-sp").checked } }); UI.editC = null; }, "已儲存");
   };
   if($("ec-del")) $("ec-del").onclick = () => { if(!confirm(`刪除 ${c.name}？\n她的施作紀錄、抵用金紀錄會一起刪掉，找不回來。`)) return;
     run(async () => { await api("adminCust", { removeId:c.id }); UI.detail = null; UI.editC = null; }, "已刪除"); };
   $("v-new").onclick = () => { UI.vdraft = draftOf(null); UI.editV = "new"; render(); };
   document.querySelectorAll("[data-ev]").forEach(x => x.onclick = () => { UI.vdraft = draftOf(DATA.visits.find(v => v.id === x.dataset.ev)); UI.editV = x.dataset.ev; render(); });
-  wireVisit(c); wireCredit(c, on);
+  wireVisit(c); wireCredit(c, on); wireCrEdit(c);
 }
 
 /* ======================================================================
@@ -1204,13 +1283,14 @@ function adminMonth(){
   <div class="card"><b>活動</b>
     <span class="lab">標籤</span><input class="fld" id="m-tag" value="${esc(M.tag)}" placeholder="12月活動">
     <span class="lab">活動項目</span><input class="fld" id="m-items" value="${esc(M.items)}" placeholder="霧眉 / 飄眉 / 飄霧眉">
-    <span class="lab">方案<small>客人預約時選的</small></span>
-    <div id="plans">${M.plans.map((p,i) => `<div class="plan"><div><span class="lab">名稱</span><input class="fld" data-pi="${i}" data-k="name" value="${esc(p.name)}"></div><div><span class="lab">活動價</span><input class="fld" data-pi="${i}" data-k="price" inputmode="numeric" value="${esc(p.price)}"></div><div><span class="lab">原價</span><input class="fld" data-pi="${i}" data-k="was" inputmode="numeric" value="${esc(p.was)}"></div><button type="button" class="x" data-rmp="${i}" aria-label="刪除方案">×</button></div>`).join("") || `<p class="hint">還沒有方案</p>`}</div>
+    <span class="lab">方案<small>價格可以空白，就只顯示文字</small></span>
+    <label class="chk"><input type="checkbox" id="m-pick"${M.noPlan ? "" : " checked"}>預約時要客人選方案（不勾＝只選項目就好）</label>
+    <div id="plans">${M.plans.map((p,i) => `<div class="plan"><div><span class="lab">名稱／說明</span><textarea class="fld" data-pi="${i}" data-k="name" rows="2" style="resize:vertical">${esc(p.name)}</textarea></div><div><span class="lab">活動價</span><input class="fld" data-pi="${i}" data-k="price" inputmode="numeric" value="${esc(Number(p.price) ? p.price : "")}" placeholder="空白"></div><div><span class="lab">原價</span><input class="fld" data-pi="${i}" data-k="was" inputmode="numeric" value="${esc(Number(p.was) ? p.was : "")}" placeholder="空白"></div><button type="button" class="x" data-rmp="${i}" aria-label="刪除方案">×</button></div>`).join("") || `<p class="hint">還沒有方案</p>`}</div>
     <button type="button" class="mini" id="m-addplan">＋ 新增方案</button></div>
   <div class="card"><b>術前須知</b><p class="hint" style="margin:2px 0 6px">怎麼換行，客人看到的就怎麼換行。</p><textarea class="fld" id="m-notes" style="min-height:260px">${esc(M.notes)}</textarea></div>
   <button type="button" class="btn" id="m-save">儲存 ${mm} 月</button>`;
   wireMonthChips(latest);
-  const sync = () => { M.tag = $("m-tag").value.trim(); M.items = $("m-items").value.trim(); M.notes = $("m-notes").value; M.visible = $("m-visible").checked;
+  const sync = () => { M.tag = $("m-tag").value.trim(); M.items = $("m-items").value.trim(); M.notes = $("m-notes").value; M.visible = $("m-visible").checked; M.noPlan = !$("m-pick").checked;
     document.querySelectorAll("[data-pi]").forEach(inp => { const p = M.plans[Number(inp.dataset.pi)]; if(p) p[inp.dataset.k] = inp.value.trim(); }); };
   document.querySelectorAll("[data-cm]").forEach(b => b.onclick = () => { sync(); UI.calMode = b.dataset.cm; render(); });
   $("cal").querySelectorAll("button").forEach(b => b.onclick = () => {
@@ -1233,7 +1313,7 @@ function adminMonth(){
   $("m-save").onclick = () => { sync();
     if(M.visible && !M.openDays.length && !confirm("這個月還沒有開放任何日期，確定要公開嗎？")) return;
     run(async () => { const j = await api("adminSaveMonth", { month:{ month:M.month, openDays:M.openDays, header:M.header, tag:M.tag, items:M.items,
-      plans:M.plans.filter(p => p.name).map(p => ({ name:p.name, price:Number(p.price)||0, was:Number(p.was)||0 })), notes:M.notes, visible:M.visible, marks:M.marks || {} } }); DATA.months = j.months; UI.draft = null; }, "已儲存，預約頁已更新"); };
+      plans:M.plans.filter(p => p.name).map(p => ({ name:p.name, price:Number(p.price)||0, was:Number(p.was)||0 })), notes:M.notes, visible:M.visible, marks:M.marks || {}, noPlan:!!M.noPlan } }); DATA.months = j.months; UI.draft = null; }, "已儲存，預約頁已更新"); };
 }
 function wireMonthChips(latest){
   document.querySelectorAll("[data-mm]").forEach(b => b.onclick = () => { UI.curMonth = b.dataset.mm; UI.draft = null; render(); });
