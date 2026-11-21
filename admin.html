@@ -311,7 +311,10 @@ const DAY_HINT = `<p class="fine2" style="margin:4px 0 0">日期可以打 2023.5
 const EST = () => Object.assign({ until:"", perVisit:0 }, CFG().estimate || {});
 const isEstMonth = m => { const e = EST(); return !!(e.until && Number(e.perVisit) && m <= e.until); };
 const visitsInMonth = m => DATA.visits.filter(v => (v.date || "").startsWith(m));
-const costOfMonth = m => isEstMonth(m) ? visitsInMonth(m).length * Number(EST().perVisit) : DATA.expenses.filter(e => e.date.startsWith(m)).reduce((s,e) => s + (Number(e.amt)||0), 0);
+const visitCost = v => Number(v.rent) > 0 ? Number(v.rent) : Number(EST().perVisit) || 0;
+const estOf = list => { const real = list.filter(v => Number(v.rent) > 0), rest = list.length - real.length;
+  return { real:real.length, realAmt:real.reduce((s,v) => s + Number(v.rent), 0), rest, restAmt:rest * (Number(EST().perVisit) || 0), total:list.reduce((s,v) => s + visitCost(v), 0) }; };
+const costOfMonth = m => isEstMonth(m) ? estOf(visitsInMonth(m)).total : DATA.expenses.filter(e => e.date.startsWith(m)).reduce((s,e) => s + (Number(e.amt)||0), 0);
 
 /* ======================================================================
    跟後台溝通
@@ -1221,18 +1224,19 @@ function adminAcct(){
   const list = DATA.expenses.filter(e => e.date.startsWith(M)).sort((a,b) => b.date.localeCompare(a.date));
   const estMs = isEstMonth(on.slice(0,4) + "-01") ? DATA.visits.map(v => (v.date || "").slice(0,7)).filter(m => m && isEstMonth(m) && m >= String(Number(on.slice(0,4)) - 1) + "-01") : [];
   const months = [...new Set(DATA.expenses.map(e => e.date.slice(0,7)).concat(on.slice(0,7), estMs))].sort().reverse().slice(0,14);
-  const real = list.reduce((s,e) => s + (Number(e.amt)||0), 0), est = isEstMonth(M), nVis = visitsInMonth(M).length;
+  const real = list.reduce((s,e) => s + (Number(e.amt)||0), 0), est = isEstMonth(M), nVis = visitsInMonth(M).length, eo = estOf(visitsInMonth(M));
+  const estTxt = `${eo.real ? `${eo.real} 位有記租金 ${money(eo.realAmt)}` : ""}${eo.real && eo.rest ? "＋" : ""}${eo.rest ? `${eo.rest} 位 × ${money(E.perVisit)}` : ""}` || "0 位";
   const yr = M.slice(0,4); let ytd = 0; for(let m = yr + "-01"; m <= (yr === on.slice(0,4) ? on.slice(0,7) : yr + "-12"); m = addM(m + "-01", 1).slice(0,7)) ytd += costOfMonth(m);
   const cats = CFG().expenseCats.map(c => ({ c, a:list.filter(e => e.cat === c).reduce((s,e) => s + (Number(e.amt)||0), 0) })).filter(x => x.a);
   $("pane").innerHTML = `<h2>記帳</h2><p class="hint">結帳時填的場地租金會自動記在這裡。數字會算進「統計」。</p>
-    <div class="kpis"><div class="kpi"><div class="l">${Number(M.slice(5))} 月支出${est ? "（估算）" : ""}</div><div class="v">${money(costOfMonth(M))}</div><div class="s">${est ? `${nVis} 位 × ${money(E.perVisit)}` : `${list.length} 筆`}</div></div>
+    <div class="kpis"><div class="kpi"><div class="l">${Number(M.slice(5))} 月支出${est ? "（估算）" : ""}</div><div class="v">${money(costOfMonth(M))}</div><div class="s">${est ? estTxt : `${list.length} 筆`}</div></div>
       <div class="kpi"><div class="l">${yr} 年支出</div><div class="v">${money(ytd)}</div><div class="s">${isEstMonth(yr + "-01") ? `${E.until.replace("-","/")} 以前是估算` : "到這個月為止"}</div></div></div>
     <div class="card"><b>新增支出</b>
       <div class="g2"><div><span class="lab">日期</span><input class="fld" type="date" id="x-date" value="${on}"></div><div><span class="lab">分類</span><select class="fld" id="x-cat">${CFG().expenseCats.map(c => `<option>${esc(c)}</option>`).join("")}</select></div></div>
       <div class="g2" style="grid-template-columns:1.6fr 1fr"><div><span class="lab">項目</span><input class="fld" id="x-name" placeholder="霧眉色乳 咖啡灰"></div><div><span class="lab">金額</span><input class="fld" id="x-amt" inputmode="numeric" placeholder="1800"></div></div>
       <button type="button" class="btn" id="x-add">記一筆</button></div>
     <div class="chips">${months.map(m => `<button type="button" class="chip${m===UI.acctM?" sel":""}" data-m2="${m}">${Number(m.slice(5))} 月</button>`).join("")}</div>
-    ${est ? `<div class="note warn" style="margin:0 0 10px">${Number(M.slice(5))} 月還沒開始記帳，先用估算：${nVis} 位客人 × ${money(E.perVisit)} = <b>${money(nVis * Number(E.perVisit))}</b>。${real ? `下面實際記的 ${money(real)} 不另外算，避免重複。` : ""}估算可以在「設定 → 支出分類」改。</div>` : ""}
+    ${est ? `<div class="note warn" style="margin:0 0 10px">${Number(M.slice(5))} 月還沒開始記帳，先用估算：有記租金的用實際租金，沒記的每位 ${money(E.perVisit)}，共 <b>${money(eo.total)}</b>（${estTxt}）。${real - eo.realAmt > 0 ? `下面其他實際記的支出不另外算，避免重複。` : ""}估算可以在「設定 → 支出分類」改。</div>` : ""}
     <div class="card" style="padding:4px 14px">${list.map(e => `<div class="exp"><div><span class="cat ${esc(e.cat)}">${esc(e.cat)}</span>${esc(e.name)}<div class="d">${fmt(e.date)}${e.auto ? "・結帳時自動記" : ""}</div></div><span style="display:flex;align-items:center;gap:6px"><b>${money(e.amt)}</b>${e.auto ? "" : `<button type="button" class="x" data-xdel="${e.id}" aria-label="刪除">×</button>`}</span></div>`).join("") || `<div class="empty" style="margin:10px 0">這個月還沒有支出</div>`}
       ${cats.length > 1 ? `<div style="padding:8px 0 0">${cats.map(x => `<div class="line" style="font-size:13px;padding:2px 0"><span><span class="cat ${esc(x.c)}">${esc(x.c)}</span></span><span>${money(x.a)}</span></div>`).join("")}</div>` : ""}
       <div class="line t"><span>${Number(M.slice(5))} 月實際記的合計</span><span>${money(real)}</span></div></div>`;
@@ -1257,9 +1261,9 @@ function adminStat(){
   const on = today(), [from, to] = rangeOf(UI.range, on), N = x => Number(x) || 0;
   const inR = d => d >= from && d <= to;
   const E = EST(), vs = DATA.visits.filter(v => inR(v.date)), ex = DATA.expenses.filter(e => inR(e.date) && !isEstMonth(e.date.slice(0,7)));
-  const estN = vs.filter(v => isEstMonth(v.date.slice(0,7))).length, estAmt = estN * N(E.perVisit);
-  const rev = vs.reduce((s,v) => s + N(v.revenue), 0), cost = ex.reduce((s,e) => s + N(e.amt), 0) + estAmt;
-  const rent = ex.filter(e => e.cat === "場地").reduce((s,e) => s + N(e.amt), 0);
+  const eo = estOf(vs.filter(v => isEstMonth(v.date.slice(0,7)))), estN = eo.rest, estAmt = eo.restAmt;
+  const rev = vs.reduce((s,v) => s + N(v.revenue), 0), cost = ex.reduce((s,e) => s + N(e.amt), 0) + estAmt + eo.realAmt;
+  const rent = ex.filter(e => e.cat === "場地").reduce((s,e) => s + N(e.amt), 0) + eo.realAmt;
   const treats = vs.filter(v => v.kind === "施作"), tus = vs.filter(v => v.kind === "補色");
   const mix = pkgOptions().map((p,i) => ({ ...p, n:treats.filter(v => N(v.paid) === p.paid).length, color:["#D4D6C8","#A2AA93","#161616","#6B6E66"][i] || "#888" }));
   const changed = treats.filter(v => v.picked && N(v.picked) !== N(v.paid)).length;
@@ -1270,7 +1274,7 @@ function adminStat(){
   const locs = CFG().locations.map(l => { const lv = vs.filter(v => v.loc === l.name); return { name:l.name, n:lv.length, rev:lv.reduce((s,v)=>s+N(v.revenue),0), rent:lv.reduce((s,v)=>s+N(v.rent),0) }; });
   const credOut = DATA.creditLog.filter(x => inR(x.date) && N(x.amt) > 0).reduce((s,x)=>s+N(x.amt),0), credUsed = vs.reduce((s,v)=>s+N(v.creditUsed),0);
   const fOff = vs.reduce((s,v)=>s+N(v.friendOff),0), referred = treats.filter(v => N(v.friendOff)).length;
-  const cats = (estAmt ? [{ c:"估算", a:estAmt }] : []).concat(CFG().expenseCats.map(c => ({ c, a:ex.filter(e => e.cat === c).reduce((s,e)=>s+N(e.amt),0) })).filter(x => x.a));
+  const cats = (estAmt ? [{ c:"估算", a:estAmt }] : []).concat(CFG().expenseCats.map(c => ({ c, a:ex.filter(e => e.cat === c).reduce((s,e)=>s+N(e.amt),0) + (c === "場地" ? eo.realAmt : 0) })).filter(x => x.a));
   $("pane").innerHTML = `<h2>統計</h2>
     <div class="chips">${[["m","這個月"],["pm","上個月"],["3m","近 3 個月"],["y","今年"],["c","自訂"]].map(([k,t]) => `<button type="button" class="chip${UI.range===k?" sel":""}" data-rg="${k}">${t}</button>`).join("")}</div>
     ${UI.range === "c" ? `<div class="g2" style="margin-bottom:10px"><input class="fld" type="date" id="from" value="${from}"><input class="fld" type="date" id="to" value="${to}"></div>` : `<p class="hint">${fmt(from)} ～ ${fmt(to)}</p>`}
@@ -1280,7 +1284,7 @@ function adminStat(){
       <div class="kpi"><div class="l">總支出</div><div class="v">${money(cost)}</div><div class="s">${estAmt ? `含估算 ${money(estAmt)}（${estN} 位）` : rev ? `占營業額 ${Math.round(cost/rev*100)}%` : ""}</div></div>
       <div class="kpi"><div class="l">場地租金</div><div class="v">${money(rent)}</div><div class="s">${vs.filter(v=>N(v.rent)).length ? `平均每場 ${money(Math.round(rent/vs.filter(v=>N(v.rent)).length))}` : ""}</div></div>
       <div class="kpi"><div class="l">${estAmt ? "估算＋雜項" : "雜項支出"}</div><div class="v">${money(cost - rent)}</div><div class="s">${cats.filter(x=>x.c!=="場地").map(x=>esc(x.c)).join("、")}</div></div></div>
-    ${estAmt ? `<p class="fine2" style="margin:-4px 0 12px">${E.until.replace("-","/")} 以前還沒記帳，支出用「每位客人 ${money(E.perVisit)}」估算（施作和補色都算一位）。可以在「設定 → 支出分類」改。</p>` : ""}
+    ${estAmt ? `<p class="fine2" style="margin:-4px 0 12px">${E.until.replace("-","/")} 以前還沒記帳：有記租金的那筆用實際租金，沒記的用「每位客人 ${money(E.perVisit)}」估算（施作和補色都算一位）。可以在「設定 → 支出分類」改。</p>` : ""}
     <div class="card"><b>客人選的包套</b><span class="meta" style="margin-left:6px">${treats.length} 筆施作</span>
       <div class="stack">${mix.map(m => `<i style="width:${treats.length ? m.n/treats.length*100 : 0}%;background:${m.color}"></i>`).join("")}</div>
       <div class="leg">${mix.slice().reverse().map(m => `<div><span class="sw" style="background:${m.color}"></span>${money(m.paid)}（${m.label}）<b>${m.n} 筆・${treats.length ? Math.round(m.n/treats.length*100) : 0}%</b></div>`).join("")}</div>
