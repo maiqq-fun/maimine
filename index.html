@@ -676,7 +676,7 @@ async function bootMy(){
   const shareUrl = j.bookingLiff ? `https://liff.line.me/${j.bookingLiff}?ref=${j.customer ? j.customer.code : ""}` : location.origin + location.pathname;
   const shareMsg = j.customer ? C.shareText.replace(/\{code\}/g, j.customer.code).replace(/\{off\}/g, money(C.friendOff)).replace(/\{url\}/g, shareUrl) : "";
   if(j.customer){
-    referHtml = `<div class="refer"><div class="r1">推薦好友 🤍</div><div class="r2">${esc(C.referHeadline)} <b>${money(C.referReward)}</b> 抵用金</div><div class="r3">好友第一次施作，現折 ${money(C.friendOff)}</div>
+    referHtml = `<div class="refer"><div class="r1">推薦好友 🤍</div><div class="r2">${esc(C.referHeadline)} <span style="white-space:nowrap"><b>${money(C.referReward)}</b> 抵用金</span></div><div class="r3">好友第一次施作，現折 ${money(C.friendOff)}</div>
       <div class="rc"><span>你的推薦碼</span><b>${esc(j.customer.code)}</b></div>
       <div class="r4">按下面的按鈕，把預約連結傳給朋友，推薦碼會自動帶入${j.customer.phone ? "；朋友也可以在「推薦碼」欄位填你的手機" : ""}</div>
       <div class="rbtn"><button type="button" id="shareLine">傳給 LINE 好友</button><button type="button" id="shareCopy">複製訊息</button></div>
@@ -688,8 +688,8 @@ async function bootMy(){
   const tl = (j.timeline || []).map(e => {
     let t, s;
     if(e.kind === "抵用金"){ t = e.amt > 0 ? `抵用金 +${money(e.amt)}` : `抵用金 ${money(e.amt)}`; s = e.why; }
-    else if(e.kind === "施作"){ t = `${esc(e.service)}・${money(e.paid)}<span class="src">${e.source === "補登" ? "麥麥補登" : "預約"}</span>`; s = Number(e.months) ? `含補色券 1 張（${e.months} 個月）` : "單次"; }
-    else { t = `補色<span class="src">${e.source === "補登" ? "麥麥補登" : "預約"}</span>`; s = Number(e.price) === 0 ? "使用補色券・$0" : `補色 ${money(e.price)}`; }
+    else if(e.kind === "施作"){ t = `${esc(e.service)}・${money(e.paid)}<span class="src">${e.source === "補登" ? "麥麥登記" : "預約"}</span>`; s = Number(e.months) ? `含補色券 1 張（${e.months} 個月）` : "單次"; }
+    else { t = `補色<span class="src">${e.source === "補登" ? "麥麥登記" : "預約"}</span>`; s = Number(e.price) === 0 ? "使用補色券・$0" : `補色 ${money(e.price)}`; }
     return `<div class="ti"><div class="d">${ymd(e.date)}</div><div class="t">${t}</div><div class="s">${esc(s)}</div></div>`;
   }).join("");
 
@@ -699,7 +699,7 @@ async function bootMy(){
     <div class="msec">即將到來</div>
     ${j.upcoming.length ? j.upcoming.map(card).join("") : `<div class="placeholder" style="margin-bottom:14px">目前沒有預約</div>`}
     ${voucher}${creditHtml}${referHtml}
-    ${tl ? `<div class="msec">我的紀錄</div><div class="mcard"><div class="tl">${tl}</div></div>${(j.timeline||[]).some(e => e.source === "補登") ? `<p class="fine2" style="margin-top:-6px">「麥麥補登」是系統上線前的紀錄，由麥麥幫你補上。紀錄有錯的話，直接私訊麥麥就好 🤍</p>` : ""}` : ""}
+    ${tl ? `<div class="msec">我的紀錄</div><div class="mcard"><div class="tl">${tl}</div></div>${(j.timeline||[]).some(e => e.source === "補登") ? `<p class="fine2" style="margin-top:-6px">「麥麥登記」是麥麥幫你登記的紀錄。紀錄有錯的話，直接私訊麥麥就好 🤍</p>` : ""}` : ""}
     <a class="mnew" href="${location.pathname}">＋ 預約新的時段</a>`;
   $("my").style.display = "";
   if($("shareLine")) $("shareLine").onclick = async () => {
