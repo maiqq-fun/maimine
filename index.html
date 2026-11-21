@@ -370,7 +370,7 @@ function touchupOf(last, on, C){
     if(on <= yearEnd) return { ...o, price:Math.max(0, again - value), tag:"補色券逾期・補差價" };
     return { ...o, price:Math.max(0, base - value), tag:"補色券逾期・補差價" };
   }
-  if(on <= yearEnd) return { ...o, price:again, tag:"續補優惠" };
+  if(on <= yearEnd) return { ...o, price:again, tag:months ? "續補優惠" : "一年內補色" };
   return { ...o, price:null, tag:"重新施作" };
 }
 const state = { month:null, day:null, session:null, start:null, loc:null, svc:null, plan:null };
@@ -698,7 +698,7 @@ function renderMy(j, stale){
       fine.push(`續補優惠：${ymd(t.yearEnd)} 前，每次補色 ${money(t.again)}`);
       fine.push(`${ymd(addD(t.yearEnd,1))} 起：視為重新施作，依當時價格`);
     } else {
-      main = `<div class="hl"><span>續補優惠</span><b>${ymd(t.yearEnd)} 前補色 ${money(t.again)}</b></div>`;
+      main = `<div class="hl"><span>一年內補色</span><b>${ymd(t.yearEnd)} 前補色 ${money(t.again)}</b></div>`;
       fine.push(`${ymd(addD(t.yearEnd,1))} 起：視為重新施作，依當時價格`);
     }
     fine.push("以上皆可使用抵用金折抵");
@@ -706,7 +706,7 @@ function renderMy(j, stale){
     let warn = "";
     const left = (a, b) => Math.round((P8(b) - P8(a)) / 86400000);
     if(t.months && !v.voucherUsed && today <= t.freeEnd && left(today, t.freeEnd) <= 31 + adv){ const last = addD(t.freeEnd, -adv); warn = last >= today ? `<div class="mwarn">⏰ 補色券在 ${ymd(t.freeEnd)} 到期。補色要提前 ${adv} 天預約，<b>最晚 ${ymd(last)} 前</b>要預約喔！</div>` : `<div class="mwarn">⏰ 補色券在 ${ymd(t.freeEnd)} 到期，已來不及在期限內預約，之後補色需補差價。</div>`; }
-    else if(today <= t.yearEnd && left(today, t.yearEnd) <= 46 + adv){ const last = addD(t.yearEnd, -adv); warn = `<div class="mwarn">⏰ 續補優惠在 ${ymd(t.yearEnd)} 到期。補色要提前 ${adv} 天預約，${last >= today ? `<b>最晚 ${ymd(last)} 前</b>要預約喔！` : "已來不及在期限內預約。"}</div>`; }
+    else if(today <= t.yearEnd && left(today, t.yearEnd) <= 46 + adv){ const last = addD(t.yearEnd, -adv); warn = `<div class="mwarn">⏰ ${t.months ? "續補優惠" : "一年內補色價"}在 ${ymd(t.yearEnd)} 到期。補色要提前 ${adv} 天預約，${last >= today ? `<b>最晚 ${ymd(last)} 前</b>要預約喔！` : "已來不及在期限內預約。"}</div>`; }
     voucher = `<div class="mcard"><div class="mtop"><span class="mpill ok">${t.months ? "補色券" : "補色優惠"}</span><span class="mcd">${ymd(v.date)} 施作・${money(v.paid)}</span></div>
       ${main}<ul class="fine">${fine.map(x => `<li>${x}</li>`).join("")}</ul>${warn}
       <a class="mnew" href="${location.pathname}?svc=${encodeURIComponent("補色")}" style="margin-top:12px">預約補色</a>

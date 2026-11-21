@@ -277,7 +277,7 @@ function touchup(cid, on){
     if(on <= yearEnd) return { ...o, price:Math.max(0, again - value), tag:"補色券逾期・補差價", why:`補色券已在 ${fmt(freeEnd)} 到期，${fmt(yearEnd)} 前補差價 ${money(again - value)} 即可使用`, useVoucher:true };
     return { ...o, price:Math.max(0, base - value), tag:"補色券逾期・補差價", why:`已超過 ${fmt(yearEnd)}，補差價 ${money(base - value)} 即可使用（依 ${fmt(v.date)} 購買時的體驗價 ${money(base)} 計算）`, useVoucher:true };
   }
-  if(on <= yearEnd) return { ...o, price:again, tag:"續補優惠", why:`${fmt(yearEnd)} 前補色，每次 ${money(again)}` };
+  if(on <= yearEnd) return { ...o, price:again, tag:months ? "續補優惠" : "一年內補色", why:`${fmt(yearEnd)} 前補色，每次 ${money(again)}` };
   return { ...o, price:null, tag:"重新施作", why:`已超過 ${fmt(yearEnd)}，視為重新施作，依當時價格計算` };
 }
 function credit(c, on){
@@ -754,7 +754,7 @@ function complete(b){
   const opt = isTreat ? (pkgOptions().find(p => p.paid === f.paid) || { months:0 }) : null;
   let tag, text;
   if(isTreat && opt.months){ tag = "補色券已加入"; text = `謝謝你今天來找麥麥 🤍\n這次的包套含補色券 1 張：\n${fmt(addM(on, opt.months))} 前來補色：免費\n\n補色也要提前 ${SETT().minAdvanceDays} 天預約喔！期限、逾期補差價和續補優惠，都可以在「我的預約」查看。`; }
-  else if(isTreat){ tag = "謝謝光臨"; text = `謝謝你今天來找麥麥 🤍\n${fmt(addM(on, 12))} 前補色享續補價 ${money(CFG().againWithout)}，詳細可以在「我的預約」查看。`; }
+  else if(isTreat){ tag = "謝謝光臨"; text = `謝謝你今天來找麥麥 🤍\n${fmt(addM(on, 12))} 前來補色，每次 ${money(CFG().againWithout)}，詳細可以在「我的預約」查看。`; }
   else { tag = "謝謝光臨"; text = `補色完成，謝謝你今天來找麥麥 🤍\n術後照顧記得看一下，有任何問題都可以直接在這裡問我喔！`; }
   const to = b.userId || (c && c.userId);
   const msgs = [{ to:b.name, line:!!to, tag, text, buttons:["我的預約"] }], also = [`記入營業額 ${money(f.revenue)}`];
@@ -791,10 +791,10 @@ function voucherCard(c, on){
     main = `<div class="hl off"><span>補色券</span><b>已使用（${v.usedOn ? fmt(v.usedOn) : ""}）</b></div>`;
     fine.push(`續補優惠：${fmt(t.yearEnd)} 前，每次 ${money(t.again)}`);
   } else {
-    main = `<div class="hl"><span>續補優惠</span><b>${fmt(t.yearEnd)} 前補色 ${money(t.again)}</b></div>`;
+    main = `<div class="hl"><span>一年內補色</span><b>${fmt(t.yearEnd)} 前補色 ${money(t.again)}</b></div>`;
+    fine.push(`${fmt(addD(t.yearEnd,1))} 起：視為重新施作，依當時價格`);
   }
-  return `<div class="card"><div class="top"><span class="pill">${t.months ? "補色券" : "補色優惠"}</span><span class="meta">${fmt(v.date)} 施作・${money(v.paid)}${v.source === "補登" ? "・補登" : ""}</span></div>${main}<ul class="fine">${fine.map(x => `<li>${x}</li>`).join("")}</ul>
-    <div class="note ${t.price===0?"ok":""}">今天補色：<b>${t.price===null?"依當時價格":t.price===0?"免費":money(t.price)}</b><span class="tag g">${esc(t.tag)}</span></div></div>`;
+  return `<div class="card"><div class="top"><span class="pill">${t.months ? "補色券" : "補色優惠"}</span><span class="meta">${fmt(v.date)} 施作・${money(v.paid)}${v.source === "補登" ? "・補登" : ""}</span></div>${main}<ul class="fine">${fine.map(x => `<li>${x}</li>`).join("")}</ul></div>`;
 }
 function creditCard(c, on){
   const cr = credit(c, on);
@@ -813,7 +813,7 @@ function timeline(c){
     if(UI.editV === v.id){ ev.push({ d:v.date || "", form:true }); return; }
     let s = v.kind === "施作" ? (Number(v.months) ? `含補色券（${v.months} 個月）${v.voucherUsed ? "・已用" : ""}` : "單次") : (Number(v.price) === 0 ? "使用補色券・$0" : `補色 ${money(v.price)}`);
     s += `・實收 ${money(v.revenue)}`;
-    if(v.kind === "施作") s += `・體驗價 ${money(v.base)}・續補 ${money(v.again)}`;
+    if(v.kind === "施作") s += `・體驗價 ${money(v.base)}・${Number(v.months) ? "續補" : "一年內補色"} ${money(v.again)}`;
     if(v.loc) s += `・${v.loc}${v.room ? " " + v.room : ""}${v.rent ? " 租金 " + money(v.rent) : ""}`;
     ev.push({ d:v.date || "", id:v.id, t:`${v.kind === "施作" ? esc(v.service) + "・" + money(v.paid) : "補色"}<span class="src">${v.source === "補登" ? "補登" : v.source === "手動" ? "手動" : v.source ? "線上預約" : "試算表"}</span>`, s });
   });
@@ -871,8 +871,8 @@ function visitForm(){
         <div><span class="lab">當時體驗價</span><input class="fld" data-vf="base" inputmode="numeric" value="${esc(d.base)}"></div>
         <div><span class="lab">續補價</span><input class="fld" data-vf="again" inputmode="numeric" value="${esc(d.again)}" placeholder="${Number(d.months) ? CFG().againWith : CFG().againWithout}"></div></div>
       <p class="fine2" style="margin:4px 0 0">補差價用「包套金額 − 當時體驗價」算；續補價空白就用現在的設定</p>
-      ${Number(d.months) ? `<label class="chk"><input type="checkbox" data-vf="voucherUsed"${d.voucherUsed ? " checked" : ""}>補色券已經用過了</label>${d.voucherUsed ? `<span class="lab">使用日<small>選填</small></span>${dayIn("vf-used", d.usedOn)}` : ""}` : ""}`
-    : `<span class="lab">補色價<small>用補色券就填 0</small></span><input class="fld" data-vf="price" inputmode="numeric" value="${esc(d.price)}">`}
+      ${Number(d.months) ? `<label class="chk"><input type="checkbox" data-vf="voucherUsed"${d.voucherUsed ? " checked" : ""}>補色券已經用過了</label>${d.voucherUsed ? `<span class="lab">使用日<small>填了會自動多一筆那天的補色紀錄</small></span>${dayIn("vf-used", d.usedOn)}` : ""}` : ""}`
+    : `<span class="lab">補色價<small>用補色券就填 0，會自動把補色券標成已用</small></span><input class="fld" data-vf="price" inputmode="numeric" value="${esc(d.price)}">`}
     <div class="g2"><div><span class="lab">工作室<small>可以空白</small></span><select class="fld" data-vf="loc">${[""].concat(CFG().locations.map(l => l.name), d.loc && !CFG().locations.some(l => l.name === d.loc) ? [d.loc] : []).map(x => `<option value="${esc(x)}"${x === d.loc ? " selected" : ""}>${x ? esc(x) : "（空白）"}</option>`).join("")}</select></div>
       <div><span class="lab">場地租金<small>會同步到記帳</small></span><input class="fld" data-vf="rent" inputmode="numeric" value="${esc(d.rent)}" placeholder="0"></div></div>
     <span class="lab">實收<small>空白＝跟${isT ? "包套金額" : "補色價"}一樣</small></span><input class="fld" data-vf="revenue" inputmode="numeric" value="${esc(d.revenue)}">
@@ -894,8 +894,9 @@ function wireVisit(c){
     const date = parseDay(d.date); if(!date){ toast("日期看不懂，請打像 2023.5.12 這樣", true); return; }
     const usedOn = d.voucherUsed ? parseDay(d.usedOn) : ""; if(usedOn === null){ toast("使用日看不懂，可以空著", true); return; }
     const N = x => String(x ?? "").trim() === "" ? "" : Number(String(x).replace(/[^\d]/g,"")) || 0;
-    run(async () => { await api("adminVisit", { visit:{ id:d.id, cid:c.id, date, kind:d.kind, service:d.service, paid:N(d.paid), months:Number(d.months) || 0, base:N(d.base), again:N(d.again),
-      voucherUsed:!!d.voucherUsed, usedOn, price:N(d.price), revenue:N(d.revenue), loc:d.loc || "", rent:N(d.rent) || 0 } }); UI.editV = null; }, "紀錄已儲存");
+    run(async () => { const j = await api("adminVisit", { visit:{ id:d.id, cid:c.id, date, kind:d.kind, service:d.service, paid:N(d.paid), months:Number(d.months) || 0, base:N(d.base), again:N(d.again),
+      voucherUsed:!!d.voucherUsed, usedOn, price:N(d.price), revenue:N(d.revenue), loc:d.loc || "", rent:N(d.rent) || 0 } }); UI.editV = null;
+      toast(j.auto === "touch" ? `已儲存，也自動多了一筆 ${fmtDot(usedOn)} 的補色紀錄` : j.auto === "voucher" ? "已儲存，她的補色券也標成已用了" : "紀錄已儲存"); });
   };
   $("vf-x").onclick = () => { UI.editV = null; render(); };
   if($("vf-del")) $("vf-del").onclick = () => { if(!confirm("刪除這筆紀錄？刪掉就找不回來。\n（結帳時自動記的場地租金也會一起刪）")) return;
@@ -966,8 +967,8 @@ function adminCust(){
   if(UI.filter === "month") list = (UI.fmode === "new" ? list.filter(c => firstDay(c).startsWith(UI.fm)) : list.filter(c => cameIn(c, UI.fm).length))
     .sort((a,b) => (UI.fmode === "new" ? firstDay(a).localeCompare(firstDay(b)) : (cameIn(a, UI.fm)[0].date || "").localeCompare(cameIn(b, UI.fm)[0].date || "")));
   const monthBar = UI.filter !== "month" ? "" : `<div class="card" style="padding:12px">
-      <div class="g2"><div><span class="lab">月份</span><input class="fld" type="month" id="fm" value="${esc(UI.fm)}"></div>
-        <div><span class="lab">要看</span><select class="fld" id="fmode"><option value="came"${UI.fmode === "came" ? " selected" : ""}>有來的（施作＋補色）</option><option value="new"${UI.fmode === "new" ? " selected" : ""}>第一次來的新客</option></select></div></div>
+      <span class="lab">月份</span><input class="fld" type="month" id="fm" value="${esc(UI.fm)}" style="display:block;width:100%;min-width:0;-webkit-appearance:none;appearance:none;min-height:46px;text-align:left">
+        <span class="lab">要看</span><select class="fld" id="fmode" style="width:100%"><option value="came"${UI.fmode === "came" ? " selected" : ""}>有來的（施作＋補色）</option><option value="new"${UI.fmode === "new" ? " selected" : ""}>第一次來的新客</option></select>
       <div class="top" style="margin-top:8px"><span class="meta">${Number(UI.fm.slice(5))} 月${UI.fmode === "new" ? "新客" : "有來的客人"}：<b>${list.length}</b> 位</span>${list.length ? `<button type="button" class="mini" id="fcopy">📋 複製名單</button>` : ""}</div>
       ${UI.fmode === "came" ? `<p class="fine2" style="margin:2px 0 0">施作 ${list.filter(c => cameIn(c, UI.fm).some(v => v.kind === "施作")).length} 位・補色 ${list.filter(c => cameIn(c, UI.fm).some(v => v.kind === "補色")).length} 位</p>` : `<p class="fine2" style="margin:2px 0 0">用她第一筆紀錄的日期算；還沒有紀錄的用建立日期</p>`}</div>`;
   const monthNote = c => { if(UI.filter !== "month") return "";
@@ -975,8 +976,8 @@ function adminCust(){
     return `<div class="m">${cameIn(c, UI.fm).map(v => `${fmt(v.date)} ${v.kind === "補色" ? "補色" : esc(v.service)}`).join("、")}</div>`; };
   if(UI.filter === "bday") list = list.filter(c => bdayThisMonth(c, on)).sort((a,b) => a.bday.slice(8).localeCompare(b.bday.slice(8)));
   if(UI.q) list = list.filter(c => [c.name, c.phone, c.ig, c.lineName, c.code].join(" ").toUpperCase().includes(UI.q.toUpperCase()));
-  const right = c => { const t = touchup(c.id, on), cr = credit(c, on); let s; if(!t.v) s = "還沒施作"; else if(t.months && !t.v.voucherUsed) s = on <= t.freeEnd ? `補色券至 ${fmt(t.freeEnd)}` : `補色券逾期`; else if(t.price !== null) s = `續補 ${money(t.price)}`; else s = "重新施作"; return `<span${soon(c)?' style="color:var(--warn)"':""}>${s}</span>${cr.bal ? `<br>抵用金 ${money(cr.bal)}` : ""}`; };
-  $("pane").innerHTML = `<h2>客人</h2>${bindCards()}
+  const right = c => { const t = touchup(c.id, on), cr = credit(c, on); let s; if(!t.v) s = "還沒施作"; else if(t.months && !t.v.voucherUsed) s = on <= t.freeEnd ? `補色券至 ${fmt(t.freeEnd)}` : `補色券逾期`; else if(t.price !== null) s = `${t.months ? "續補" : "補色"} ${money(t.price)}`; else s = "重新施作"; return `<span${soon(c)?' style="color:var(--warn)"':""}>${s}</span>${cr.bal ? `<br>抵用金 ${money(cr.bal)}` : ""}`; };
+  $("pane").innerHTML = `<h2>客人</h2>${bindCards()}${fixCard()}
     <input class="fld" id="q" placeholder="🔍 搜尋姓名、手機、IG、LINE 名稱、推薦碼" value="${esc(UI.q)}" style="margin-bottom:8px">
     <div class="chips">${[["all",`全部 ${DATA.customers.length}`],["soon",`補色券快到期 ${DATA.customers.filter(soon).length}`],["noline",`未綁 LINE ${DATA.customers.filter(c=>!c.userId).length}`],["bday",`🎂 ${Number(on.slice(5,7))}月壽星 ${DATA.customers.filter(c=>bdayThisMonth(c,on)).length}`],["special",`⭐ 特殊 ${DATA.customers.filter(c=>c.special).length}`],["month","📅 按月份"]].map(([k,t]) => `<button type="button" class="chip${UI.filter===k?" sel":""}" data-fl="${k}">${t}</button>`).join("")}<button type="button" class="chip dark" id="addc">＋ 補登客人</button><button type="button" class="chip dark" id="impc">📋 批次補登</button></div>
     ${UI.addCust ? addCustForm() : ""}${UI.imp ? impForm() : ""}${monthBar}
@@ -992,13 +993,17 @@ function adminCust(){
   $("addc").onclick = () => { UI.addCust = !UI.addCust; render(); };
   $("impc").onclick = () => { UI.imp = !UI.imp; render(); };
   wireBinds();
+  if($("fixgo")) $("fixgo").onclick = () => { const n = fixList().miss.length;
+    if(!confirm(`幫 ${n} 位補上補色紀錄？\n每筆都是 $0（用補色券），日期用補色券的使用日，之後可以再修改。`)) return;
+    run(async () => { const j = await api("adminFixTouch", {}); toast(`已補上 ${j.fixed} 筆補色紀錄`); }); };
   wireImp();
   if($("ac-save")) $("ac-save").onclick = () => {
     const name = $("ac-name").value.trim(); if(!name){ toast("請填姓名", true); return; }
     const bday = parseDay($("ac-bday").value); if(bday === null){ toast("生日看不懂，請打像 1995.3.8 這樣", true); return; }
     const date = parseDay($("ac-date").value); if(date === null){ toast("施作日期看不懂，請打像 2023.5.12 這樣", true); return; }
     const N = id => Number($(id).value.replace(/\D/g,"")) || 0;
-    const visit = date ? { date, service:$("ac-svc").value, paid:N("ac-paid") || CFG().trialPrice, months:Number($("ac-months").value) || 0, base:N("ac-base") || CFG().trialPrice, again:N("ac-again"), voucherUsed:$("ac-used").checked } : null;
+    const usedOn = parseDay($("ac-usedon").value); if(usedOn === null){ toast("補色日期看不懂，可以空著", true); return; }
+    const visit = date ? { date, service:$("ac-svc").value, paid:N("ac-paid") || CFG().trialPrice, months:Number($("ac-months").value) || 0, base:N("ac-base") || CFG().trialPrice, again:N("ac-again"), voucherUsed:$("ac-used").checked || !!usedOn, usedOn } : null;
     run(async () => { await api("adminCust", { cust:{ name, phone:$("ac-phone").value, ig:$("ac-ig").value, bday, note:$("ac-note").value }, visit }); UI.addCust = false; }, `已補登 ${name}`);
   };
   if($("ac-x")) $("ac-x").onclick = () => { UI.addCust = false; render(); };
@@ -1014,8 +1019,27 @@ function addCustForm(){
     <div class="g3"><div><span class="lab">補色券</span><select class="fld" id="ac-months">${mOpts.map(m => `<option value="${m}">${m ? m + " 個月" : "沒有"}</option>`).join("")}</select></div><div><span class="lab">當時體驗價</span><input class="fld" id="ac-base" inputmode="numeric" value="${CFG().trialPrice}"></div><div><span class="lab">續補價</span><input class="fld" id="ac-again" inputmode="numeric" placeholder="照設定"></div></div>
     ${DAY_HINT}
     <label class="chk"><input type="checkbox" id="ac-used">補色券已經用過了</label>
+    <span class="lab">補色日期<small>選填，填了會多一筆那天的補色紀錄</small></span>${dayIn("ac-usedon", "")}
     <div class="btns"><button type="button" class="btn" id="ac-save">新增</button><button type="button" class="btn g" id="ac-x">取消</button></div></div>`;
 }
+/* ---------- 補色券已用，但沒有那次的補色紀錄 ---------- */
+function fixList(){
+  const touches = DATA.visits.filter(v => v.kind === "補色");
+  const used = DATA.visits.filter(v => v.kind === "施作" && v.voucherUsed);
+  return {
+    miss: used.filter(v => v.usedOn && !touches.some(x => x.cid === v.cid && x.date === v.usedOn)),
+    noDate: used.filter(v => !v.usedOn && !touches.some(x => x.cid === v.cid && x.date > v.date))
+  };
+}
+function fixCard(){
+  const f = fixList();
+  if(!f.miss.length && !f.noDate.length) return "";
+  const names = list => [...new Set(list.map(v => v.cid))].map(id => { const c = custOf(id); return c ? `<button type="button" class="mini" data-det="${c.id}" style="padding:0 6px 0 0">${esc(c.name)}</button>` : ""; }).join("");
+  return `<div class="card" style="border-color:var(--warn)"><b>🔧 補色券用過了，但沒有補色那次的紀錄</b>
+    ${f.miss.length ? `<p class="hint" style="margin:4px 0 6px">${f.miss.length} 筆有使用日，可以一鍵補上（$0、用補色券），租金之後可以再改：${names(f.miss)}</p><button type="button" class="btn" id="fixgo">一鍵補上 ${f.miss.length} 筆</button>` : ""}
+    ${f.noDate.length ? `<p class="hint" style="margin:8px 0 0">${f.noDate.length} 位沒有填使用日，要點進去用「＋ 補一筆紀錄」補：${names(f.noDate)}</p>` : ""}</div>`;
+}
+
 /* ---------- 舊客在「我的預約」申請綁定 ---------- */
 function bindCards(){
   const list = DATA.binds || [];
