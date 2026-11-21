@@ -882,15 +882,15 @@ function visitForm(){
   const svcs = ["霧眉","飄眉","飄霧眉"].concat(["霧眉","飄眉","飄霧眉","補色"].includes(d.service) ? [] : [d.service]);
   return `<div class="stu edit"><b>${d.id ? "修改紀錄" : "補一筆紀錄"}</b>
     <div class="g2"><div><span class="lab">日期</span>${dayIn("vf-date", d.date)}</div><div><span class="lab">種類</span><select class="fld" data-vf="kind">${["施作","補色"].map(k => `<option${k===d.kind?" selected":""}>${k}</option>`).join("")}</select></div></div>${DAY_HINT}
+    <div class="g2"><div><span class="lab">這次的工作室<small>可以空白</small></span><select class="fld" data-vf="loc">${[""].concat(CFG().locations.map(l => l.name), d.loc && !CFG().locations.some(l => l.name === d.loc) ? [d.loc] : []).map(x => `<option value="${esc(x)}"${x === d.loc ? " selected" : ""}>${x ? esc(x) : "（空白）"}</option>`).join("")}</select></div>
+      <div><span class="lab">這次的場地租金</span><input class="fld" data-vf="rent" inputmode="numeric" value="${esc(d.rent)}" placeholder="0"></div></div>
     ${isT ? `<div class="g2"><div><span class="lab">項目</span><select class="fld" data-vf="service">${svcs.map(x => `<option${x===d.service?" selected":""}>${esc(x)}</option>`).join("")}</select></div><div><span class="lab">包套金額<small>當時實際的價格</small></span><input class="fld" data-vf="paid" inputmode="numeric" value="${esc(d.paid)}"></div></div>
       <div class="g3"><div><span class="lab">補色券</span><select class="fld" data-vf="months">${mOpts.map(m => `<option value="${m}"${m === Number(d.months) ? " selected" : ""}>${m ? m + " 個月" : "沒有"}</option>`).join("")}</select></div>
         <div><span class="lab">當時體驗價</span><input class="fld" data-vf="base" inputmode="numeric" value="${esc(d.base)}"></div>
         <div><span class="lab">續補價</span><input class="fld" data-vf="again" inputmode="numeric" value="${esc(d.again)}" placeholder="${Number(d.months) ? CFG().againWith : CFG().againWithout}"></div></div>
       <p class="fine2" style="margin:4px 0 0">補差價用「包套金額 − 當時體驗價」算；續補價空白就用現在的設定</p>
-      ${Number(d.months) ? `<label class="chk"><input type="checkbox" data-vf="voucherUsed"${d.voucherUsed ? " checked" : ""}>補色券已經用過了</label>${d.voucherUsed ? `<span class="lab">使用日<small>填了會自動多一筆那天的補色紀錄</small></span>${dayIn("vf-used", d.usedOn)}` : ""}` : ""}`
+      ${Number(d.months) ? `<label class="chk"><input type="checkbox" data-vf="voucherUsed"${d.voucherUsed ? " checked" : ""}>補色券已經用過了</label>${d.voucherUsed ? `<p class="fine2" style="margin:2px 0 6px">補色那天的工作室和租金，請到那筆「補色」紀錄填。</p><span class="lab">使用日<small>填了會自動多一筆那天的補色紀錄</small></span>${dayIn("vf-used", d.usedOn)}` : ""}` : ""}`
     : `<span class="lab">補色價<small>用補色券就填 0，會自動把補色券標成已用</small></span><input class="fld" data-vf="price" inputmode="numeric" value="${esc(d.price)}">`}
-    <div class="g2"><div><span class="lab">工作室<small>可以空白</small></span><select class="fld" data-vf="loc">${[""].concat(CFG().locations.map(l => l.name), d.loc && !CFG().locations.some(l => l.name === d.loc) ? [d.loc] : []).map(x => `<option value="${esc(x)}"${x === d.loc ? " selected" : ""}>${x ? esc(x) : "（空白）"}</option>`).join("")}</select></div>
-      <div><span class="lab">場地租金<small>會同步到記帳</small></span><input class="fld" data-vf="rent" inputmode="numeric" value="${esc(d.rent)}" placeholder="0"></div></div>
     <span class="lab">實收<small>空白＝跟${isT ? "包套金額" : "補色價"}一樣</small></span><input class="fld" data-vf="revenue" inputmode="numeric" value="${esc(d.revenue)}">
     <div class="btns"><button type="button" class="btn" id="vf-save">儲存</button><button type="button" class="btn g" id="vf-x">取消</button></div>
     ${d.id ? `<button type="button" class="mini" id="vf-del" style="color:var(--red);margin-top:8px">刪除這筆紀錄</button>` : ""}</div>`;
