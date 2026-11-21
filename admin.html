@@ -927,16 +927,34 @@ function adminCust(){
   if(UI.filter === "soon") list = list.filter(soon);
   if(UI.filter === "noline") list = list.filter(c => !c.userId);
   if(UI.filter === "special") list = list.filter(c => c.special);
+  UI.fm = UI.fm || on.slice(0,7); UI.fmode = UI.fmode || "came";
+  const firstDay = c => { const ds = visitsOf(c.id).map(v => v.date).filter(Boolean).sort(); return ds[0] || (c.created || "").slice(0,10); };
+  const cameIn = (c, m) => visitsOf(c.id).filter(v => (v.date || "").startsWith(m));
+  if(UI.filter === "month") list = (UI.fmode === "new" ? list.filter(c => firstDay(c).startsWith(UI.fm)) : list.filter(c => cameIn(c, UI.fm).length))
+    .sort((a,b) => (UI.fmode === "new" ? firstDay(a).localeCompare(firstDay(b)) : (cameIn(a, UI.fm)[0].date || "").localeCompare(cameIn(b, UI.fm)[0].date || "")));
+  const monthBar = UI.filter !== "month" ? "" : `<div class="card" style="padding:12px">
+      <div class="g2"><div><span class="lab">月份</span><input class="fld" type="month" id="fm" value="${esc(UI.fm)}"></div>
+        <div><span class="lab">要看</span><select class="fld" id="fmode"><option value="came"${UI.fmode === "came" ? " selected" : ""}>有來的（施作＋補色）</option><option value="new"${UI.fmode === "new" ? " selected" : ""}>第一次來的新客</option></select></div></div>
+      <div class="top" style="margin-top:8px"><span class="meta">${Number(UI.fm.slice(5))} 月${UI.fmode === "new" ? "新客" : "有來的客人"}：<b>${list.length}</b> 位</span>${list.length ? `<button type="button" class="mini" id="fcopy">📋 複製名單</button>` : ""}</div>
+      ${UI.fmode === "came" ? `<p class="fine2" style="margin:2px 0 0">施作 ${list.filter(c => cameIn(c, UI.fm).some(v => v.kind === "施作")).length} 位・補色 ${list.filter(c => cameIn(c, UI.fm).some(v => v.kind === "補色")).length} 位</p>` : `<p class="fine2" style="margin:2px 0 0">用她第一筆紀錄的日期算；還沒有紀錄的用建立日期</p>`}</div>`;
+  const monthNote = c => { if(UI.filter !== "month") return "";
+    if(UI.fmode === "new") return `<div class="m">第一次：${fmt(firstDay(c))}</div>`;
+    return `<div class="m">${cameIn(c, UI.fm).map(v => `${fmt(v.date)} ${v.kind === "補色" ? "補色" : esc(v.service)}`).join("、")}</div>`; };
   if(UI.filter === "bday") list = list.filter(c => bdayThisMonth(c, on)).sort((a,b) => a.bday.slice(8).localeCompare(b.bday.slice(8)));
   if(UI.q) list = list.filter(c => [c.name, c.phone, c.ig, c.lineName, c.code].join(" ").toUpperCase().includes(UI.q.toUpperCase()));
   const right = c => { const t = touchup(c.id, on), cr = credit(c, on); let s; if(!t.v) s = "還沒施作"; else if(t.months && !t.v.voucherUsed) s = on <= t.freeEnd ? `補色券至 ${fmt(t.freeEnd)}` : `補色券逾期`; else if(t.price !== null) s = `續補 ${money(t.price)}`; else s = "重新施作"; return `<span${soon(c)?' style="color:var(--warn)"':""}>${s}</span>${cr.bal ? `<br>抵用金 ${money(cr.bal)}` : ""}`; };
   $("pane").innerHTML = `<h2>客人</h2>${bindCards()}
     <input class="fld" id="q" placeholder="🔍 搜尋姓名、手機、IG、LINE 名稱、推薦碼" value="${esc(UI.q)}" style="margin-bottom:8px">
-    <div class="chips">${[["all",`全部 ${DATA.customers.length}`],["soon",`補色券快到期 ${DATA.customers.filter(soon).length}`],["noline",`未綁 LINE ${DATA.customers.filter(c=>!c.userId).length}`],["bday",`🎂 ${Number(on.slice(5,7))}月壽星 ${DATA.customers.filter(c=>bdayThisMonth(c,on)).length}`],["special",`⭐ 特殊 ${DATA.customers.filter(c=>c.special).length}`]].map(([k,t]) => `<button type="button" class="chip${UI.filter===k?" sel":""}" data-fl="${k}">${t}</button>`).join("")}<button type="button" class="chip dark" id="addc">＋ 補登客人</button><button type="button" class="chip dark" id="impc">📋 批次補登</button></div>
-    ${UI.addCust ? addCustForm() : ""}${UI.imp ? impForm() : ""}
-    ${list.map(c => { const v = lastTreat(c.id); return `<button type="button" class="cl" data-det="${c.id}"><div><div class="n">${esc(c.name)}${c.special ? '<span class="b sp">⭐ 特殊</span>' : ""}${c.userId ? '<span class="b ln">LINE</span>' : '<span class="b no">未綁 LINE</span>'}${c.phone ? "" : '<span class="b ph">沒有手機</span>'}</div><div class="m">${esc(c.phone || c.ig || "")}${c.bday ? `・🎂 ${bdayTxt(c)}` : ""}</div><div class="m">${esc(c.code)}${v ? `・${fmt(v.date)} ${esc(v.service)}${v.source==="補登"?" 補登":""}` : ""}</div></div><div class="r">${right(c)}</div></button>`; }).join("") || `<div class="empty">找不到</div>`}`;
+    <div class="chips">${[["all",`全部 ${DATA.customers.length}`],["soon",`補色券快到期 ${DATA.customers.filter(soon).length}`],["noline",`未綁 LINE ${DATA.customers.filter(c=>!c.userId).length}`],["bday",`🎂 ${Number(on.slice(5,7))}月壽星 ${DATA.customers.filter(c=>bdayThisMonth(c,on)).length}`],["special",`⭐ 特殊 ${DATA.customers.filter(c=>c.special).length}`],["month","📅 按月份"]].map(([k,t]) => `<button type="button" class="chip${UI.filter===k?" sel":""}" data-fl="${k}">${t}</button>`).join("")}<button type="button" class="chip dark" id="addc">＋ 補登客人</button><button type="button" class="chip dark" id="impc">📋 批次補登</button></div>
+    ${UI.addCust ? addCustForm() : ""}${UI.imp ? impForm() : ""}${monthBar}
+    ${list.map(c => { const v = lastTreat(c.id); return `<button type="button" class="cl" data-det="${c.id}"><div><div class="n">${esc(c.name)}${c.special ? '<span class="b sp">⭐ 特殊</span>' : ""}${c.userId ? '<span class="b ln">LINE</span>' : '<span class="b no">未綁 LINE</span>'}${c.phone ? "" : '<span class="b ph">沒有手機</span>'}</div><div class="m">${esc(c.phone || c.ig || "")}${c.bday ? `・🎂 ${bdayTxt(c)}` : ""}</div><div class="m">${esc(c.code)}${v ? `・${fmt(v.date)} ${esc(v.service)}${v.source==="補登"?" 補登":""}` : ""}</div>${monthNote(c)}</div><div class="r">${right(c)}</div></button>`; }).join("") || `<div class="empty">找不到</div>`}`;
   const q = $("q"); q.oninput = () => { UI.q = q.value; const pos = q.selectionStart; render(); const n = $("q"); n.focus(); n.setSelectionRange(pos,pos); };
   $("pane").querySelectorAll("[data-fl]").forEach(b => b.onclick = () => { UI.filter = b.dataset.fl; render(); });
+  if($("fm")) $("fm").onchange = () => { if($("fm").value) UI.fm = $("fm").value; render(); };
+  if($("fmode")) $("fmode").onchange = () => { UI.fmode = $("fmode").value; render(); };
+  if($("fcopy")) $("fcopy").onclick = async () => {
+    const t = `${Number(UI.fm.slice(5))} 月${UI.fmode === "new" ? "新客" : "有來的客人"}（${list.length} 位）\n` + list.map(c => [c.name, c.phone, c.special ? "⭐特殊" : ""].filter(Boolean).join("　")).join("\n");
+    try{ await navigator.clipboard.writeText(t); toast("已複製名單"); }catch(_){ prompt("複製下面的名單：", t); } };
   $("pane").querySelectorAll("[data-det]").forEach(b => b.onclick = () => { UI.detail = b.dataset.det; render(); window.scrollTo({top:0}); });
   $("addc").onclick = () => { UI.addCust = !UI.addCust; render(); };
   $("impc").onclick = () => { UI.imp = !UI.imp; render(); };
