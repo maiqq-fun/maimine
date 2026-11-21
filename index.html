@@ -310,9 +310,9 @@ details.rules[open] summary::after{content:"收合"}
     <span class="status">預約申請已送出・待確認</span>
     <dl id="summary"></dl>
     <div class="next"><b>接下來</b>
-      <ol>
+      <ol id="nextList">
         <li>麥確認工作室有位後，會用 LINE 回覆最終時間和地點</li>
-        <li id="nextDeposit">收到回覆後預付定金（施作當日折抵）</li>
+        <li>收到回覆後預付定金（施作當日折抵）</li>
         <li>付款完成，預約就成立囉</li>
       </ol>
     </div>
@@ -439,9 +439,6 @@ function selectMonth(month){
     M.plans.map(p => `<div class="row"><span>${esc(p.name)}</span><span class="price">$${Number(p.price).toLocaleString()}${p.was ? `<s>$${Number(p.was).toLocaleString()}</s>` : ""}</span></div>`).join("");
   $("notes").textContent = M.notes || "";
   $("advHint").textContent = `需提前 ${S.minAdvanceDays} 天預約，下面是目前還能約的日子。`;
-  $("depositNote").textContent = `送出後麥會先確認工作室，再用 LINE 跟你收定金 $${S.deposit.toLocaleString()}（施作當日折抵）`;
-  $("nextDeposit").textContent = `收到回覆後預付定金 $${S.deposit.toLocaleString()}（施作當日折抵）`;
-  $("agreeSmall").textContent = `包含定金 $${S.deposit.toLocaleString()}，以及取消或改期的規定`;
   const first = M.openDays.map(d => dateStr(M.month,d)).find(dayAvail);
   if(first) pick(first); else renderAll();
 }
@@ -574,7 +571,7 @@ function renderSvc(){
     const C = D.cfg || {}, t = ME && ME.last && state.day ? touchupOf(ME.last, state.day, { trialPrice:4500, againWith:2500, againWithout:3000 }) : null;
     if(!state.day) pl.textContent = "選好日期後，會顯示這天來補色的價格";
     else if(!t) pl.textContent = "補色價格由麥確認後告知";
-    else if(t.price === 0) pl.innerHTML = `${Number(state.day.slice(5,7))}/${Number(state.day.slice(8))} 來補色：<b>免費</b>（使用補色券）`;
+    else if(t.price === 0) pl.innerHTML = `${Number(state.day.slice(5,7))}/${Number(state.day.slice(8))} 來補色：<b>免費</b>（使用補色券，不用付定金）`;
     else if(t.price === null) pl.textContent = "距離上次施作已超過 12 個月，視為重新施作，價格由麥確認後告知";
     else pl.innerHTML = `${Number(state.day.slice(5,7))}/${Number(state.day.slice(8))} 來補色：<b>${money(t.price)}</b>（${t.tag}）${ME.credit && ME.credit.bal ? `，可以用抵用金 ${money(ME.credit.bal)} 折抵` : ""}`;
   }
@@ -584,7 +581,21 @@ function renderSvc(){
   } else pl.textContent = state.svc==="現場決定" ? "項目可以到現場再決定，方案先選一個就好" : "";
 }
 
-function renderAll(){ renderDays(); renderTimes(); renderLocs(); renderSvc(); }
+/* 用補色券免費補色：不用付定金 */
+function isFreeTouch(){
+  if(state.svc !== "補色" || !ME || !ME.last || !state.day) return false;
+  const t = touchupOf(ME.last, state.day, { trialPrice:4500, againWith:2500, againWithout:3000 });
+  return !!t && t.price === 0;
+}
+function depositTexts(){
+  const free = isFreeTouch(), dep = "$" + S.deposit.toLocaleString();
+  $("depositNote").textContent = free ? "這次使用補色券，不用付定金。麥確認工作室後，會直接用 LINE 傳預約成立通知和地址給你" : `送出後麥會先確認工作室，再用 LINE 跟你收定金 ${dep}（施作當日折抵）`;
+  $("agreeSmall").textContent = free ? "包含取消或改期的規定" : `包含定金 ${dep}，以及取消或改期的規定`;
+  $("nextList").innerHTML = free
+    ? `<li>麥確認工作室有位後，會用 LINE 傳預約成立通知</li><li>通知裡會有地址和交通方式，使用補色券不用付定金</li>`
+    : `<li>麥確認工作室有位後，會用 LINE 回覆最終時間和地點</li><li>收到回覆後預付定金 ${dep}（施作當日折抵）</li><li>付款完成，預約就成立囉</li>`;
+}
+function renderAll(){ renderDays(); renderTimes(); renderLocs(); renderSvc(); depositTexts(); }
 
 
 /* ================= 我的預約 ================= */
@@ -608,15 +619,17 @@ async function bootMy(){
     const item = esc(b.service) + (b.plan ? "・" + esc(b.plan.replace("　"," ")) : "");
     let rows = `<span>地點</span><span>${esc(b.loc)}</span>`;
     if(b.addr) rows += `<span>地址</span><span>${esc(b.addr)}</span>`;
+    if(b.transit) rows += `<span>交通</span><span>${esc(b.transit)}</span>`;
     rows += `<span>項目</span><span>${item}</span>`;
-    if(b.status === "已預約") rows += `<span>付款</span><span>已收定金 $${j.deposit.toLocaleString()}${b.rest > 0 ? `，現場再付 $${b.rest.toLocaleString()}` : ""}</span>`;
+    const dep = b.dep ?? j.deposit;
+    if(b.status === "已預約") rows += `<span>付款</span><span>${dep ? `已收定金 $${dep.toLocaleString()}` : "免定金"}${b.rest > 0 ? `，現場${dep ? "再" : ""}付 $${b.rest.toLocaleString()}` : ""}</span>`;
     let note = "", btns = "";
     if(b.status === "已預約"){
       note = b.changeBy && b.changeBy >= today ? `需要改期或取消，請在 <b>${mdOf(b.changeBy)}</b>前私訊麥麥，超過就不能更改囉。` : `已經超過改期期限囉，有問題請直接私訊麥麥。`;
       btns = (b.addr ? `<a class="mbtn main" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(b.addr)}" target="_blank" rel="noopener">Google 地圖導航</a>` : "") +
              `<a class="mbtn" href="${location.pathname}?view=rules">術前須知</a>`;
     } else if(b.status === "待付定金"){
-      note = `時間已經幫你留好了！${b.payBy ? `請在 <b>${esc(b.payBy)}</b> 前` : "請盡快"}付定金 $${j.deposit.toLocaleString()}，付款後把截圖傳到聊天室。`;
+      note = `時間已經幫你留好了！${b.payBy ? `請在 <b>${esc(b.payBy)}</b> 前` : "請盡快"}付定金 $${dep.toLocaleString()}，付款後把截圖傳到聊天室。`;
       if(b.payImageUrl) btns = `<a class="mbtn main full" href="${esc(b.payImageUrl)}" target="_blank" rel="noopener">查看收款碼</a>`;
     } else if(b.status === "待確認"){
       note = "麥麥確認工作室後，會用 LINE 回覆你最終的時間和地點。";

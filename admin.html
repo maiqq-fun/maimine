@@ -284,6 +284,32 @@ function credit(c, on){
   return { bal, exp:c.creditExp };
 }
 
+/* 定金：補色券免費補色不收；沒特別設定就用「其他設定」的定金 */
+const depOf = b => b.dep === "" || b.dep == null ? SETT().deposit : Number(b.dep) || 0;
+const isFreeTouch = (b, c) => b.service === "補色" && !!c && touchup(c.id, b.date).price === 0;
+const transitOf = loc => (locOf(loc) || {}).transit || "";
+
+/* 日期可以打 2023.5.12、2023/5/12、20230512，或民國 112.5.12 */
+function parseDay(s){
+  s = String(s || "").trim(); if(!s) return "";
+  const m = s.match(/^(\d{2,4})\D+(\d{1,2})\D+(\d{1,2})\D*$/) || s.match(/^(\d{4})(\d{2})(\d{2})$/) || s.match(/^(\d{3})(\d{2})(\d{2})$/);
+  if(!m) return null;
+  let y = Number(m[1]); const mo = Number(m[2]), d = Number(m[3]);
+  if(y < 1000) y += 1911;
+  const dt = new Date(y, mo-1, d);
+  if(dt.getFullYear() !== y || dt.getMonth() !== mo-1 || dt.getDate() !== d) return null;
+  return `${y}-${pad(mo)}-${pad(d)}`;
+}
+const fmtDot = ds => { if(!ds) return ""; const [y,m,d] = ds.split("-").map(Number); return `${y}.${m}.${d}`; };
+const dayIn = (id, v) => `<input class="fld" id="${id}" value="${esc(v)}" inputmode="decimal" placeholder="2023.5.12" autocomplete="off">`;
+const DAY_HINT = `<p class="fine2" style="margin:4px 0 0">日期可以打 2023.5.12、20230512，或民國 112.5.12</p>`;
+
+/* 估算支出：還沒開始記帳的月份，用「客人數 × 金額」 */
+const EST = () => Object.assign({ until:"", perVisit:0 }, CFG().estimate || {});
+const isEstMonth = m => { const e = EST(); return !!(e.until && Number(e.perVisit) && m <= e.until); };
+const visitsInMonth = m => DATA.visits.filter(v => (v.date || "").startsWith(m));
+const costOfMonth = m => isEstMonth(m) ? visitsInMonth(m).length * Number(EST().perVisit) : DATA.expenses.filter(e => e.date.startsWith(m)).reduce((s,e) => s + (Number(e.amt)||0), 0);
+
 /* ======================================================================
    跟後台溝通
    ====================================================================== */
@@ -357,17 +383,19 @@ function confirmSend(msgs, also, onSend){
 /* 訊息範本（確認畫面裡都可以改） */
 const itemOf = b => `${b.service}${b.plan ? "・" + b.plan.replace("　"," ") : ""}${b.price ? " " + money(b.price) : ""}`;
 const infoLines = b => `日期：${fmtW(b.date)}\n時間：${b.start}\n地點：${b.loc}\n項目：${itemOf(b)}`;
+const placeLines = b => { const t = transitOf(b.loc); return `地址：${addrOf(b.loc) || "（還沒填地址）"}` + (t ? `\n交通：${t}` : ""); };
 const MSG = {
   confirm: (b, adj) => ({ tag: adj ? "時間確認（有調整）" : "時間確認", buttons: [SETT().payImage ? "查看收款碼" : "", "術前須知"].filter(Boolean),
     text: `嗨 ${b.name}，時間確認囉！\n\n${infoLines(b)}\n\n定金 ${money(SETT().deposit)}（施作當日折抵）\n請在 ${SETT().payHours} 小時內付款，付款後把截圖傳到這個聊天室就可以囉！${SETT().payInfo ? "\n\n" + SETT().payInfo : ""}` }),
-  paid: b => { const rest = b.price ? Number(b.price) - SETT().deposit : 0;
+  paid: b => { const dep = depOf(b), rest = b.price ? Number(b.price) - dep : 0;
+    const pay = dep ? `已收定金 ${money(dep)}${rest > 0 ? `，現場再付 ${money(rest)}` : ""}` : `${b.service === "補色" ? "這次使用補色券，" : ""}不用付定金${rest > 0 ? `，現場付 ${money(rest)}` : ""}`;
     return { tag:"預約成立", buttons:["Google 地圖導航","術前須知"],
-      text: `預約成立，謝謝你 🤍\n\n${infoLines(b)}\n地址：${addrOf(b.loc) || "（還沒填地址）"}\n已收定金 ${money(SETT().deposit)}${rest > 0 ? `，現場再付 ${money(rest)}` : ""}\n\n工作室採預約制，無法提前進場，準時抵達就可以囉！前一天會再提醒你。` }; },
+      text: `預約成立，謝謝你 🤍\n\n${infoLines(b)}\n${placeLines(b)}\n${pay}\n\n工作室採預約制，無法提前進場，準時抵達就可以囉！前一天會再提醒你。` }; },
   decline: b => ({ tag:"時段無法安排", buttons:["看看其他時間"], text:`嗨 ${b.name}，不好意思，${fmtW(b.date)} ${b.start} 這個時段沒辦法安排。\n歡迎再看看其他時間，或直接在這裡跟麥麥討論！` }),
   cancel: b => ({ tag:"預約取消", buttons:[], text:`嗨 ${b.name}，你在 ${fmtW(b.date)} ${b.start} 的預約已取消。\n有任何問題都可以直接在這裡跟麥麥說。` }),
   update: (b, ch) => { const paid = b.status === "已預約";
     return { tag:"預約資訊更新", buttons: paid ? ["Google 地圖導航","我的預約"] : ["我的預約"],
-      text: `嗨 ${b.name}，你的預約有更新，請以這則為準：\n${ch.map(c => `・${c[0]}：${c[1]} → ${c[2]}`).join("\n")}\n\n${infoLines(b)}` + (paid ? `\n地址：${addrOf(b.loc)}` : `\n\n地址會在收到定金、預約成立後傳給你。`) }; }
+      text: `嗨 ${b.name}，你的預約有更新，請以這則為準：\n${ch.map(c => `・${c[0]}：${c[1]} → ${c[2]}`).join("\n")}\n\n${infoLines(b)}` + (paid ? `\n${placeLines(b)}` : depOf(b) ? `\n\n地址會在收到定金、預約成立後傳給你。` : `\n\n地址會在預約成立後傳給你。`) }; }
 };
 
 /* ======================================================================
@@ -376,10 +404,10 @@ const MSG = {
 function formOf(b){
   if(!UI.forms[b.id]){
     const s = b.studio, picked = Number(b.price) || 0, pk = pkgOptions().find(p => p.paid === picked) || pkgOptions()[0];
-    if(s && s.room) UI.forms[b.id] = { loc:s.loc || b.loc, room:s.room, hours:Number(s.hours)||3, rent:Number(s.rent)||0, paid:pk.paid, credit:null, items:[], deposit:SETT().deposit, fromStudio:true };
+    if(s && s.room) UI.forms[b.id] = { loc:s.loc || b.loc, room:s.room, hours:Number(s.hours)||3, rent:Number(s.rent)||0, paid:pk.paid, credit:null, items:[], deposit:depOf(b), fromStudio:true };
     else {
       const loc = locOf(b.loc), r = loc.rooms[0] || { name:"", rate:0 };
-      UI.forms[b.id] = { loc:loc.name, room:r.name, hours:3, rent:Math.round(r.rate*3), paid:pk.paid, credit:null, items:[], deposit:SETT().deposit };
+      UI.forms[b.id] = { loc:loc.name, room:r.name, hours:3, rent:Math.round(r.rate*3), paid:pk.paid, credit:null, items:[], deposit:depOf(b) };
     }
   }
   return UI.forms[b.id];
@@ -404,12 +432,15 @@ function adminBook(){
   } else if(UI.bview === "todo"){
     body = todo.map(b => bkCard(b, on, false)).join("") || `<div class="empty">沒有要處理的預約 🎉</div>`;
   } else {
-    body = done.slice(0, 60).map(b => `<div class="card"><div class="bk-top"><div><b class="bk-time">${fmtW(b.date)} ${b.start}</b><div class="bk-name">${esc(b.name)}<span class="meta">・${esc(b.service)}${b.status === "已完成" ? `・實收 ${money(b.revenue)}` : ""}</span></div></div><span class="pill s">${b.status}</span></div></div>`).join("") || `<div class="empty">還沒有</div>`;
+    body = done.slice(0, 60).map(b => `<div class="card"><div class="bk-top"><div><b class="bk-time">${fmtW(b.date)} ${b.start}</b><div class="bk-name">${esc(b.name)}<span class="meta">・${esc(b.service)}${b.status === "已完成" ? `・實收 ${money(b.revenue)}` : ""}</span></div></div><span class="pill s">${b.status}</span></div><button type="button" class="mini" data-bdel="${b.id}" style="color:var(--muted);margin-top:4px">🗑 刪除</button></div>`).join("") || `<div class="empty">還沒有</div>`;
   }
   $("pane").innerHTML = `<div class="top"><h2>預約</h2><button type="button" class="chip dark" id="addbk">＋ 新增預約</button></div>
     ${UI.addBk ? addBkForm() : ""}<div class="chips" style="margin-top:6px">${chips}</div>${body}`;
   $("pane").querySelectorAll("[data-bv]").forEach(x => x.onclick = () => { UI.bview = x.dataset.bv; UI.open = null; UI.editing = null; render(); });
   $("addbk").onclick = () => { UI.addBk = !UI.addBk; render(); };
+  $("pane").querySelectorAll("[data-bdel]").forEach(x => x.onclick = () => { const b = DATA.bookings.find(y => y.id === x.dataset.bdel);
+    if(!confirm(`刪除 ${b.name} ${fmtW(b.date)} ${b.start} 這筆？${b.status === "已完成" ? "\n結帳紀錄會留在客人的紀錄裡，要刪的話到客人頁面刪。" : ""}\n刪掉就找不回來。`)) return;
+    run(() => api("adminUpdate", { id:b.id, op:"delete" }), "已刪除"); });
   if(UI.addBk) wireAddBk();
   wireBk(); wireCheckout();
 }
@@ -422,13 +453,14 @@ function addBkForm(){
     <div class="g2"><div><span class="lab">姓名</span><input class="fld" id="ab-name"></div><div><span class="lab">手機<small>選填</small></span><input class="fld" id="ab-phone" inputmode="tel"></div></div>
     <div class="g2"><div><span class="lab">項目</span><select class="fld" id="ab-svc">${S.services.map(s => `<option>${esc(s)}</option>`).join("")}</select></div><div><span class="lab">包套金額<small>選填</small></span><select class="fld" id="ab-price"><option value="">—</option>${pkgOptions().map(p => `<option value="${p.paid}">${money(p.paid)}</option>`).join("")}</select></div></div>
     <span class="lab">備註<small>選填</small></span><input class="fld" id="ab-memo">
+    <label class="chk"><input type="checkbox" id="ab-free">不收定金（例如用補色券）</label>
     <div class="btns"><button type="button" class="btn" id="ab-save">新增</button><button type="button" class="btn g" id="ab-x">取消</button></div></div>`;
 }
 function wireAddBk(){
   $("ab-x").onclick = () => { UI.addBk = false; render(); };
   $("ab-save").onclick = () => {
     const d = { date:$("ab-date").value, start:$("ab-start").value, loc:$("ab-loc").value, status:$("ab-status").value, name:$("ab-name").value.trim(),
-      phone:$("ab-phone").value.trim(), service:$("ab-svc").value, price:$("ab-price").value, memo:$("ab-memo").value };
+      phone:$("ab-phone").value.trim(), service:$("ab-svc").value, price:$("ab-price").value, memo:$("ab-memo").value, dep: $("ab-free").checked ? "0" : "" };
     if(!d.date){ toast("請選擇日期", true); return; }
     if(!d.name){ toast("請填寫姓名", true); return; }
     run(async () => { await api("adminAdd", d); UI.addBk = false; UI.bview = d.status === "已預約" ? "agenda" : "todo"; }, "已新增");
@@ -441,17 +473,20 @@ function bkCard(b, on, inAgenda){
   const ref = refOf(b, c), s = b.studio || null;
   const tags = ref ? `<span class="tag warn">推薦人 ${esc(ref.name)}</span>` : isNewCust(c) && b.service !== "補色" ? `<span class="tag g">新客</span>${b.referrer && !(b.id in UI.refSet) ? `<span class="tag warn">推薦人「${esc(b.referrer)}」找不到</span>` : ""}` : "";
   const pill = b.status === "待確認" ? '<span class="pill w">待確認</span>' : b.status === "待付定金" ? '<span class="pill s">待付定金</span>' : (hasStudio(s) ? "" : '<span class="pill w">還沒訂工作室</span>');
-  let html = `<div class="card"><div class="bk-top"><div><b class="bk-time">${inAgenda ? "" : fmtW(b.date) + " "}${b.start}</b><div class="bk-name">${esc(b.name)}${b.phone ? `<a href="tel:${esc(b.phone)}">${esc(b.phone)}</a>` : ""}<br><span class="meta">${esc(itemOf(b))}・${esc(b.loc)}${b.source === "手動" ? "・手動新增" : ""}${b.lineName ? `・LINE：${esc(b.lineName)}` : ""}</span>${tags}</div></div>${pill}</div>`;
+  const free = b.status === "待確認" && isFreeTouch(b, c);
+  const depTag = free ? `<span class="tag ok">補色券免費・免定金</span>` : (b.status !== "待確認" && depOf(b) === 0 ? `<span class="tag ok">免定金</span>` : "");
+  let html = `<div class="card"><div class="bk-top"><div><b class="bk-time">${inAgenda ? "" : fmtW(b.date) + " "}${b.start}</b><div class="bk-name">${esc(b.name)}${b.phone ? `<a href="tel:${esc(b.phone)}">${esc(b.phone)}</a>` : ""}<br><span class="meta">${esc(itemOf(b))}・${esc(b.loc)}${b.source === "手動" ? "・手動新增" : ""}${b.lineName ? `・LINE：${esc(b.lineName)}` : ""}</span>${tags}${depTag}</div></div>${pill}</div>`;
   if(b.memo) html += `<div class="note">💬 ${esc(b.memo)}</div>`;
   if(hasStudio(s)) html += `<div class="stl">📍 ${esc(s.loc || b.loc)}${s.room ? "・" + esc(s.room) : ""}${s.start ? `　${esc(s.start)}–${esc(s.end)}` : `　${s.hours} 小時`}${s.code ? `　🔑 <b>${esc(s.code)}</b>` : ""}${s.stale ? `<div class="warn-t">⚠️ 預約時間改過，記得確認工作室</div>` : ""}${s.note ? `<div class="meta">📝 ${esc(s.note)}</div>` : ""}</div>`;
   if(b.status === "待付定金" && b.confirmedAt){
     const t = b.confirmedAt, due = new Date(P(t.slice(0,10)).getTime() + (Number(t.slice(11,13))*60 + Number(t.slice(14,16)))*60000 + SETT().payHours*3600000);
-    html += `<p class="meta" style="margin:6px 0 0">等定金 ${money(SETT().deposit)}・期限 ${due.getMonth()+1}/${due.getDate()} ${pad(due.getHours())}:${pad(due.getMinutes())}</p>`;
+    html += `<p class="meta" style="margin:6px 0 0">等定金 ${money(depOf(b))}・期限 ${due.getMonth()+1}/${due.getDate()} ${pad(due.getHours())}:${pad(due.getMinutes())}</p>`;
   }
   if(UI.editing === b.id) return html + editForm(b) + `</div>`;
   if(UI.open === b.id) return html + checkoutForm(b, c) + `</div>`;
   const acts = [];
-  if(b.status === "待確認") acts.push(`<button type="button" class="btn" data-ok="${b.id}">確認</button>`);
+  if(b.status === "待確認" && free) acts.push(`<button type="button" class="btn" data-okfree="${b.id}">確認・免定金</button><button type="button" class="btn g" data-ok="${b.id}">改收定金</button>`);
+  else if(b.status === "待確認") acts.push(`<button type="button" class="btn" data-ok="${b.id}">確認</button>`);
   if(b.status === "待付定金") acts.push(`<button type="button" class="btn" data-paid="${b.id}">已收定金</button>`);
   if(b.status === "已預約" && b.date <= on) acts.push(`<button type="button" class="btn" data-open="${b.id}">結帳</button>`);
   if(s && s.link) acts.push(`<a class="btn g" href="${esc(s.link)}" target="_blank" rel="noopener">入場 QR</a>`);
@@ -496,6 +531,7 @@ function editForm(b){
     ${ch.length ? (pending ? `<p class="meta" style="margin:10px 0 0">按「確認」時，會把更新後的資訊一起傳給客人。</p>` : b.userId ? `<label class="chk"><input type="checkbox" id="e-notify" checked>通知客人預約資訊更新（${ch.map(c => c[0]).join("、")}）</label>` : `<p class="meta" style="margin:10px 0 0">這位沒有綁 LINE，記得自己通知她。</p>`) : ""}
     <div class="btns"><button type="button" class="btn" id="e-save">儲存</button><button type="button" class="btn g" id="e-cancel">取消</button></div>
     <button type="button" class="mini" id="e-drop" style="color:var(--red);margin-top:8px">${pending ? "婉拒這筆預約" : "取消這筆預約"}</button>
+    <button type="button" class="mini" id="e-del" style="color:var(--muted);margin:8px 0 0 16px">🗑 直接刪除（不通知客人）</button>
   </div>`;
 }
 function changesOf(b, d){
@@ -532,6 +568,10 @@ function wireBk(){
     confirmSend([{ to:b.name, line:!!b.userId, ...m }], ["預約狀態改成「已預約」，移到「行程」"],
       t => run(() => api("adminUpdate", { id:b.id, op:"paid", msg: b.userId && t[0] ? { text:t[0], tag:m.tag } : null }), `${b.name} 預約成立！已移到「行程」`));
   });
+  pane.querySelectorAll("[data-okfree]").forEach(x => x.onclick = () => { const b = Object.assign({}, bk(x.dataset.okfree), { dep:"0" }), m = MSG.paid(b);
+    confirmSend([{ to:b.name, line:!!b.userId, ...m }], ["補色券免費補色，不收定金", "預約狀態直接改成「已預約」，移到「行程」"],
+      t => run(() => api("adminUpdate", { id:b.id, op:"paid", dep:0, msg: b.userId && t[0] ? { text:t[0], tag:m.tag } : null }), `${b.name} 預約成立！已移到「行程」`));
+  });
   pane.querySelectorAll("[data-link]").forEach(x => x.onclick = () => { UI.linking = x.dataset.link; UI.linkPick = null; UI.linkQ = null; render(); });
   pane.querySelectorAll("[data-newc]").forEach(x => x.onclick = () => run(() => api("adminLink", { id:x.dataset.newc, newCustomer:true }), "已標記為新客"));
   if($("linkq")) $("linkq").oninput = e => { UI.linkQ = e.target.value; const pos = e.target.selectionStart; render(); const n = $("linkq"); n.focus(); n.setSelectionRange(pos,pos); };
@@ -563,6 +603,8 @@ function wireBk(){
     confirmSend([{ to:b.name, line:!!b.userId, ...m }], [`預約${pending ? "婉拒" : "取消"}，${fmtW(b.date)} ${b.start} 的時段重新開放`],
       t => run(async () => { await api("adminUpdate", { id:b.id, op, msg: b.userId && t[0] ? { text:t[0], tag:m.tag } : null }); UI.editing = null; }, pending ? "已婉拒，時段重新開放" : "已取消，時段重新開放"));
   };
+  $("e-del").onclick = () => { if(!confirm(`刪除 ${b.name} ${fmtW(b.date)} ${b.start} 這筆預約？\n不會通知客人，刪掉就找不回來。`)) return;
+    run(async () => { await api("adminUpdate", { id:b.id, op:"delete" }); UI.editing = null; }, "已刪除，時段重新開放"); };
   $("e-save").onclick = () => { pull();
     const ch = changesOf(b, d), notify = $("e-notify") && $("e-notify").checked;
     const timeMoved = d.date !== b.date || d.start !== b.start;
@@ -715,16 +757,113 @@ function creditCard(c, on){
 function timeline(c){
   const ev = [];
   visitsOf(c.id).forEach(v => {
-    let s = v.kind === "施作" ? (Number(v.months) ? `含補色券（${v.months} 個月）` : "單次") : (Number(v.price) === 0 ? "使用補色券・$0" : `補色 ${money(v.price)}`);
+    if(UI.editV === v.id){ ev.push({ d:v.date || "", form:true }); return; }
+    let s = v.kind === "施作" ? (Number(v.months) ? `含補色券（${v.months} 個月）${v.voucherUsed ? "・已用" : ""}` : "單次") : (Number(v.price) === 0 ? "使用補色券・$0" : `補色 ${money(v.price)}`);
     s += `・實收 ${money(v.revenue)}`;
-    if(v.kind === "施作") s += `・體驗價 ${money(v.base)} 鎖定`;
+    if(v.kind === "施作") s += `・體驗價 ${money(v.base)}・續補 ${money(v.again)}`;
     if(v.loc) s += `・${v.loc}${v.room ? " " + v.room : ""}${v.rent ? " 租金 " + money(v.rent) : ""}`;
-    ev.push({ d:v.date, t:`${v.kind === "施作" ? esc(v.service) + "・" + money(v.paid) : "補色"}<span class="src">${v.source === "補登" ? "補登" : v.source === "手動" ? "手動" : "線上預約"}</span>`, s });
+    ev.push({ d:v.date || "", id:v.id, t:`${v.kind === "施作" ? esc(v.service) + "・" + money(v.paid) : "補色"}<span class="src">${v.source === "補登" ? "補登" : v.source === "手動" ? "手動" : v.source ? "線上預約" : "試算表"}</span>`, s });
   });
   DATA.creditLog.filter(x => x.cid === c.id).forEach(x => ev.push({ d:x.date, t:x.amt > 0 ? `抵用金 +${money(x.amt)}` : `抵用金 ${money(x.amt)}`, s:x.why }));
   ev.sort((a,b) => b.d.localeCompare(a.d));
-  return ev.length ? `<div class="tl">${ev.map(e => `<div class="ti"><div class="d">${fmt(e.d)}</div><div class="t">${e.t}</div><div class="s">${esc(e.s)}</div></div>`).join("")}</div>` : `<div class="empty">還沒有紀錄</div>`;
+  return ev.length ? `<div class="tl">${ev.map(e => e.form ? `<div style="margin:0 0 11px -18px">${visitForm()}</div>` :
+    `<div class="ti"><div class="d">${e.d ? fmt(e.d) : "（沒有日期）"}${e.id ? `<button type="button" class="mini" data-ev="${e.id}" style="padding:0 0 0 8px;font-size:12px">✏️ 修改</button>` : ""}</div><div class="t">${e.t}</div><div class="s">${esc(e.s)}</div></div>`).join("")}</div>` : `<div class="empty">還沒有紀錄</div>`;
 }
+
+/* ---------- 施作／補色紀錄：新增、修改、刪除 ---------- */
+const draftOf = v => v ? { id:v.id, date:fmtDot(v.date), kind:v.kind === "補色" ? "補色" : "施作", service:v.service || (v.kind === "補色" ? "補色" : "霧眉"),
+    paid:v.paid ?? "", months:Number(v.months) || 0, base:v.base ?? "", again:v.again ?? "", voucherUsed:!!v.voucherUsed, usedOn:fmtDot(v.usedOn), price:v.price ?? "", revenue:v.revenue ?? "" }
+  : { id:"", date:"", kind:"施作", service:"霧眉", paid:CFG().trialPrice, months:0, base:CFG().trialPrice, again:"", voucherUsed:false, usedOn:"", price:"", revenue:"" };
+function visitForm(){
+  const d = UI.vdraft, isT = d.kind === "施作";
+  const mOpts = [...new Set([0].concat(CFG().addons.map(a => Number(a.months)), [Number(d.months) || 0]))].sort((a,b) => a-b);
+  const svcs = ["霧眉","飄眉","飄霧眉"].concat(["霧眉","飄眉","飄霧眉","補色"].includes(d.service) ? [] : [d.service]);
+  return `<div class="stu edit"><b>${d.id ? "修改紀錄" : "補一筆紀錄"}</b>
+    <div class="g2"><div><span class="lab">日期</span>${dayIn("vf-date", d.date)}</div><div><span class="lab">種類</span><select class="fld" data-vf="kind">${["施作","補色"].map(k => `<option${k===d.kind?" selected":""}>${k}</option>`).join("")}</select></div></div>${DAY_HINT}
+    ${isT ? `<div class="g2"><div><span class="lab">項目</span><select class="fld" data-vf="service">${svcs.map(x => `<option${x===d.service?" selected":""}>${esc(x)}</option>`).join("")}</select></div><div><span class="lab">包套金額<small>當時實際的價格</small></span><input class="fld" data-vf="paid" inputmode="numeric" value="${esc(d.paid)}"></div></div>
+      <div class="g3"><div><span class="lab">補色券</span><select class="fld" data-vf="months">${mOpts.map(m => `<option value="${m}"${m === Number(d.months) ? " selected" : ""}>${m ? m + " 個月" : "沒有"}</option>`).join("")}</select></div>
+        <div><span class="lab">當時體驗價</span><input class="fld" data-vf="base" inputmode="numeric" value="${esc(d.base)}"></div>
+        <div><span class="lab">續補價</span><input class="fld" data-vf="again" inputmode="numeric" value="${esc(d.again)}" placeholder="${Number(d.months) ? CFG().againWith : CFG().againWithout}"></div></div>
+      <p class="fine2" style="margin:4px 0 0">補差價用「包套金額 − 當時體驗價」算；續補價空白就用現在的設定</p>
+      ${Number(d.months) ? `<label class="chk"><input type="checkbox" data-vf="voucherUsed"${d.voucherUsed ? " checked" : ""}>補色券已經用過了</label>${d.voucherUsed ? `<span class="lab">使用日<small>選填</small></span>${dayIn("vf-used", d.usedOn)}` : ""}` : ""}`
+    : `<span class="lab">補色價<small>用補色券就填 0</small></span><input class="fld" data-vf="price" inputmode="numeric" value="${esc(d.price)}">`}
+    <span class="lab">實收<small>空白＝跟${isT ? "包套金額" : "補色價"}一樣</small></span><input class="fld" data-vf="revenue" inputmode="numeric" value="${esc(d.revenue)}">
+    <div class="btns"><button type="button" class="btn" id="vf-save">儲存</button><button type="button" class="btn g" id="vf-x">取消</button></div>
+    ${d.id ? `<button type="button" class="mini" id="vf-del" style="color:var(--red);margin-top:8px">刪除這筆紀錄</button>` : ""}</div>`;
+}
+function wireVisit(c){
+  if(!$("vf-save")) return;
+  const d = UI.vdraft;
+  const pullDays = () => { d.date = $("vf-date").value; if($("vf-used")) d.usedOn = $("vf-used").value; };
+  document.querySelectorAll("[data-vf]").forEach(x => { const k = x.dataset.vf;
+    const set = () => { d[k] = x.type === "checkbox" ? x.checked : x.value; };
+    x.oninput = set;
+    x.onchange = () => { set();
+      if(k === "kind") d.service = d.kind === "補色" ? "補色" : (d.service === "補色" ? "霧眉" : d.service);
+      if(["kind","months","voucherUsed"].includes(k)){ pullDays(); render(); } };
+  });
+  $("vf-save").onclick = () => { pullDays();
+    const date = parseDay(d.date); if(!date){ toast("日期看不懂，請打像 2023.5.12 這樣", true); return; }
+    const usedOn = d.voucherUsed ? parseDay(d.usedOn) : ""; if(usedOn === null){ toast("使用日看不懂，可以空著", true); return; }
+    const N = x => String(x ?? "").trim() === "" ? "" : Number(String(x).replace(/[^\d]/g,"")) || 0;
+    run(async () => { await api("adminVisit", { visit:{ id:d.id, cid:c.id, date, kind:d.kind, service:d.service, paid:N(d.paid), months:Number(d.months) || 0, base:N(d.base), again:N(d.again),
+      voucherUsed:!!d.voucherUsed, usedOn, price:N(d.price), revenue:N(d.revenue) } }); UI.editV = null; }, "紀錄已儲存");
+  };
+  $("vf-x").onclick = () => { UI.editV = null; render(); };
+  if($("vf-del")) $("vf-del").onclick = () => { if(!confirm("刪除這筆紀錄？刪掉就找不回來。\n（結帳時自動記的場地租金也會一起刪）")) return;
+    run(async () => { await api("adminVisit", { remove:d.id }); UI.editV = null; }, "已刪除"); };
+}
+
+/* ---------- 抵用金：加、扣、事後補登推薦 ---------- */
+const crBlank = () => ({ amt:"", why:"", mode:"", friend:null, fq:"", date:"", notify:true, sign:"1" });
+function creditForm(c){
+  const f = UI.cr, reasons = (CFG().creditReasons || []).filter(Boolean), isRef = f.mode === "refer";
+  let fr = "";
+  if(isRef){
+    if(f.friend) fr = `<div class="line"><span>被推薦的朋友：<b>${esc(custName(f.friend))}</b></span><button type="button" class="mini" id="cr-fx">換一位</button></div>`;
+    else { const q = f.fq || "", res = q ? DATA.customers.filter(x => x.id !== c.id && [x.name, x.ig, x.phone, x.code].join(" ").toUpperCase().includes(q.toUpperCase())) : [];
+      fr = `<span class="lab">被推薦的朋友<small>搜尋姓名、IG、手機</small></span><input class="fld" id="cr-fq" value="${esc(q)}" placeholder="例：小琪">
+        <div style="margin-top:6px">${res.slice(0,6).map(x => `<button type="button" class="cl" data-crf="${x.id}"><div><div class="n">${esc(x.name)}</div><div class="m">${esc(x.ig || x.phone || x.code)}${x.refBy ? `・推薦人：${esc(custName(x.refBy))}` : ""}</div></div><div class="r">選擇</div></button>`).join("") || (q ? `<div class="empty">找不到</div>` : "")}</div>`; }
+  }
+  return `<div class="card"><b>加／扣抵用金</b><p class="hint" style="margin:2px 0 8px">原因會顯示在她「我的預約」的紀錄裡。先點一個原因，或自己打。</p>
+    <div class="chips" style="margin-bottom:2px">${reasons.map(r => `<button type="button" class="chip${f.mode === "r:" + r ? " sel" : ""}" data-crr="${esc(r)}">${esc(r)}</button>`).join("")}<button type="button" class="chip${isRef ? " sel" : ""}" id="cr-ref">補登推薦</button></div>
+    ${isRef ? `<p class="fine2" style="margin:0 0 4px">朋友已經來做過、當時忘了選推薦人時用。期限會從今天起延長 ${CFG().creditMonths} 個月。</p>` : ""}${fr}
+    <div class="g3" style="grid-template-columns:76px 1fr 1fr"><div><span class="lab">加／扣</span><select class="fld" id="cr-sign"><option value="1"${f.sign !== "-1" ? " selected" : ""}>加</option><option value="-1"${f.sign === "-1" ? " selected" : ""}>扣</option></select></div>
+      <div><span class="lab">金額</span><input class="fld" id="cr-amt" inputmode="numeric" value="${esc(f.amt)}" placeholder="200"></div>
+      <div><span class="lab">日期<small>空白＝今天</small></span>${dayIn("cr-date", f.date)}</div></div>
+    <span class="lab">原因</span><input class="fld" id="cr-why" value="${esc(f.why)}" placeholder="麥麥贈送">
+    ${c.userId ? `<label class="chk"><input type="checkbox" id="cr-n"${f.notify ? " checked" : ""}>加的時候傳 LINE 通知她（傳之前可以先看、改文字）</label>` : `<p class="fine2">她沒有綁 LINE，不會收到通知。</p>`}
+    <button type="button" class="btn" id="cr-ok">確定</button></div>`;
+}
+function wireCredit(c, on){
+  const f = UI.cr;
+  const pull = () => { f.amt = $("cr-amt").value; f.date = $("cr-date").value; f.why = $("cr-why").value; f.sign = $("cr-sign").value; if($("cr-n")) f.notify = $("cr-n").checked; };
+  document.querySelectorAll("[data-crr]").forEach(x => x.onclick = () => { pull(); f.mode = "r:" + x.dataset.crr; f.why = x.dataset.crr; f.friend = null; f.sign = "1"; render(); });
+  $("cr-ref").onclick = () => { pull(); f.mode = "refer"; f.sign = "1"; if(!f.amt) f.amt = String(CFG().referReward); f.why = f.friend ? `推薦${custName(f.friend)}` : ""; render(); };
+  if($("cr-fq")) $("cr-fq").oninput = e => { pull(); f.fq = e.target.value; const pos = e.target.selectionStart; render(); const n = $("cr-fq"); n.focus(); n.setSelectionRange(pos,pos); };
+  document.querySelectorAll("[data-crf]").forEach(x => x.onclick = () => { pull(); f.friend = x.dataset.crf; f.why = `推薦${custName(f.friend)}`; render(); });
+  if($("cr-fx")) $("cr-fx").onclick = () => { pull(); f.friend = null; render(); };
+  $("cr-ok").onclick = () => { pull();
+    const n = (Number(String(f.amt).replace(/\D/g,"")) || 0) * (f.sign === "-1" ? -1 : 1);
+    if(!n){ toast("請填金額", true); return; }
+    const date = f.date.trim() ? parseDay(f.date) : on; if(!date){ toast("日期看不懂，請打像 2026.11.21 這樣", true); return; }
+    const friend = f.mode === "refer" ? custOf(f.friend) : null;
+    if(f.mode === "refer" && !friend){ toast("請先選被推薦的朋友", true); return; }
+    const why = f.why.trim() || (n > 0 ? "麥麥贈送" : "手動調整");
+    const cr = credit(c, on), bal = Math.max(0, cr.bal + n);
+    const exp = !bal ? null : n > 0 && (friend || !cr.bal) ? addM(on, CFG().creditMonths) : cr.exp;
+    const also = [`${c.name} 的抵用金 ${n > 0 ? "+" : ""}${money(n)}，變成 ${money(bal)}${exp ? `（期限 ${fmt(exp)}）` : ""}`, `她的紀錄會顯示：${fmt(date)}　抵用金 ${n > 0 ? "+" : ""}${money(n)}・${why}`];
+    if(friend && !friend.refBy) also.push(`${friend.name} 的推薦人記為 ${c.name}`);
+    const send = n > 0 && !!c.userId && f.notify, tag = friend ? "推薦成功" : "抵用金";
+    const vars = { name:c.name, friend: friend ? friend.name : "", reward:money(n), amount:money(bal), date: exp ? fmt(exp) : "", why, months:CFG().creditMonths };
+    const text = fill(friend ? CFG().texts.reward : (CFG().texts.gift || "🎁 {why}\n你獲得 {reward} 抵用金\n目前抵用金：{amount}\n有效至 {date}"), vars);
+    confirmSend(send ? [{ to:c.name, tag, text, buttons:["我的預約"] }] : [], also, t => run(async () => {
+      await api("adminCredit", { cid:c.id, amt:n, why, date, friendId: friend ? friend.id : "", msg: send && t[0] ? { text:t[0], tag } : null });
+      UI.cr = crBlank();
+    }, "抵用金已更新"));
+  };
+}
+
 function adminCust(){
   const on = today();
   if(UI.detail){ const c = custOf(UI.detail); if(c) return custDetail(c, on); UI.detail = null; }
@@ -746,65 +885,83 @@ function adminCust(){
   $("addc").onclick = () => { UI.addCust = !UI.addCust; render(); };
   if($("ac-save")) $("ac-save").onclick = () => {
     const name = $("ac-name").value.trim(); if(!name){ toast("請填姓名", true); return; }
-    const paid = Number($("ac-paid").value), opt = pkgOptions().find(p => p.paid === paid);
-    const visit = $("ac-date").value ? { date:$("ac-date").value, service:$("ac-svc").value, paid, months: opt ? opt.months : 0, base:Number($("ac-base").value) || CFG().trialPrice, voucherUsed:$("ac-used").checked } : null;
-    run(async () => { await api("adminCust", { cust:{ name, phone:$("ac-phone").value, ig:$("ac-ig").value, bday:$("ac-bday").value, note:$("ac-note").value }, visit }); UI.addCust = false; }, `已補登 ${name}`);
+    const bday = parseDay($("ac-bday").value); if(bday === null){ toast("生日看不懂，請打像 1995.3.8 這樣", true); return; }
+    const date = parseDay($("ac-date").value); if(date === null){ toast("施作日期看不懂，請打像 2023.5.12 這樣", true); return; }
+    const N = id => Number($(id).value.replace(/\D/g,"")) || 0;
+    const visit = date ? { date, service:$("ac-svc").value, paid:N("ac-paid") || CFG().trialPrice, months:Number($("ac-months").value) || 0, base:N("ac-base") || CFG().trialPrice, again:N("ac-again"), voucherUsed:$("ac-used").checked } : null;
+    run(async () => { await api("adminCust", { cust:{ name, phone:$("ac-phone").value, ig:$("ac-ig").value, bday, note:$("ac-note").value }, visit }); UI.addCust = false; }, `已補登 ${name}`);
   };
   if($("ac-x")) $("ac-x").onclick = () => { UI.addCust = false; render(); };
 }
 function addCustForm(){
-  return `<div class="card"><b>補登客人</b><p class="hint" style="margin:2px 0 0">系統上線前的客人。手機可以不填，之後她用 LINE 預約補色時再「連結舊紀錄」。</p>
+  const mOpts = [0].concat(CFG().addons.map(a => Number(a.months)));
+  return `<div class="card"><b>補登客人</b><p class="hint" style="margin:2px 0 0">系統上線前的客人。手機可以不填，之後她用 LINE 預約補色時再「連結舊紀錄」。更早的紀錄，新增後到她的頁面按「＋ 補一筆紀錄」。</p>
     <div class="g2"><div><span class="lab">姓名</span><input class="fld" id="ac-name" placeholder="王小花"></div><div><span class="lab">手機<small>選填</small></span><input class="fld" id="ac-phone" inputmode="tel"></div></div>
-    <div class="g2"><div><span class="lab">IG／LINE 名稱<small>選填</small></span><input class="fld" id="ac-ig" placeholder="@xxx"></div><div><span class="lab">生日<small>選填</small></span><input class="fld" type="date" id="ac-bday"></div></div>
+    <div class="g2"><div><span class="lab">IG／LINE 名稱<small>選填</small></span><input class="fld" id="ac-ig" placeholder="@xxx"></div><div><span class="lab">生日<small>選填</small></span>${dayIn("ac-bday", "")}</div></div>
     <span class="lab">備註<small>選填</small></span><input class="fld" id="ac-note">
     <span class="lab">最近一次施作<small>不知道可以空著</small></span>
-    <div class="g3"><input class="fld" type="date" id="ac-date"><select class="fld" id="ac-svc"><option>霧眉</option><option>飄眉</option><option>飄霧眉</option></select><select class="fld" id="ac-paid">${pkgOptions().map(p => `<option value="${p.paid}">${money(p.paid)}</option>`).join("")}</select></div>
-    <span class="lab">當時的體驗價<small>補差價會用這個</small></span><input class="fld" id="ac-base" inputmode="numeric" value="${CFG().trialPrice}">
+    <div class="g3"><div><span class="lab">日期</span>${dayIn("ac-date", "")}</div><div><span class="lab">項目</span><select class="fld" id="ac-svc"><option>霧眉</option><option>飄眉</option><option>飄霧眉</option></select></div><div><span class="lab">包套金額</span><input class="fld" id="ac-paid" inputmode="numeric" value="${CFG().trialPrice}"></div></div>
+    <div class="g3"><div><span class="lab">補色券</span><select class="fld" id="ac-months">${mOpts.map(m => `<option value="${m}">${m ? m + " 個月" : "沒有"}</option>`).join("")}</select></div><div><span class="lab">當時體驗價</span><input class="fld" id="ac-base" inputmode="numeric" value="${CFG().trialPrice}"></div><div><span class="lab">續補價</span><input class="fld" id="ac-again" inputmode="numeric" placeholder="照設定"></div></div>
+    ${DAY_HINT}
     <label class="chk"><input type="checkbox" id="ac-used">補色券已經用過了</label>
     <div class="btns"><button type="button" class="btn" id="ac-save">新增</button><button type="button" class="btn g" id="ac-x">取消</button></div></div>`;
 }
 function custDetail(c, on){
+  if(UI.crFor !== c.id){ UI.crFor = c.id; UI.cr = crBlank(); UI.editV = null; }
   const ref = c.refBy ? custName(c.refBy) : "—";
   const refd = DATA.customers.filter(x => x.refBy === c.id).map(x => x.name).join("、") || "—";
   const upc = DATA.bookings.filter(b => b.cid === c.id && ACTIVE.includes(b.status));
   $("pane").innerHTML = `<button type="button" class="back" id="back">← 客人列表</button>
     <div class="card"><div class="top"><b style="font-size:19px">${esc(c.name)}</b>${c.userId ? `<span class="b ln">已綁 LINE：${esc(c.lineName)}</span>` : '<span class="b no">未綁 LINE</span>'}</div>
       ${UI.editC === c.id ? `<div class="g2"><div><span class="lab">姓名</span><input class="fld" id="ec-name" value="${esc(c.name)}"></div><div><span class="lab">手機</span><input class="fld" id="ec-phone" inputmode="tel" value="${esc(c.phone)}"></div></div>
-        <div class="g2"><div><span class="lab">生日</span><input class="fld" type="date" id="ec-bday" value="${esc(c.bday)}"></div><div><span class="lab">IG</span><input class="fld" id="ec-ig" value="${esc(c.ig)}"></div></div>
+        <div class="g2"><div><span class="lab">生日</span>${dayIn("ec-bday", fmtDot(c.bday))}</div><div><span class="lab">IG</span><input class="fld" id="ec-ig" value="${esc(c.ig)}"></div></div>
         <span class="lab">備註</span><input class="fld" id="ec-note" value="${esc(c.note)}">
-        <div class="btns"><button type="button" class="btn" id="ec-save">儲存</button><button type="button" class="btn g" id="ec-x">取消</button></div>`
+        <div class="btns"><button type="button" class="btn" id="ec-save">儲存</button><button type="button" class="btn g" id="ec-x">取消</button></div>
+        <button type="button" class="mini" id="ec-del" style="color:var(--red);margin-top:10px">刪除這位客人</button>`
       : `<div class="rows" style="grid-template-columns:70px 1fr"><span>手機</span><span>${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : "（沒有）"}</span><span>生日</span><span>${c.bday ? `🎂 ${fmt(c.bday)}${bdayThisMonth(c, on) ? '<span class="tag warn">這個月</span>' : ""}` : "—"}</span><span>推薦碼</span><span><b>${esc(c.code)}</b></span><span>IG</span><span>${esc(c.ig || "—")}</span><span>備註</span><span>${esc(c.note || "—")}</span><span>推薦人</span><span>${esc(ref)}</span><span>推薦了</span><span>${esc(refd)}</span></div>
       <button type="button" class="mini" id="ec-open" style="margin-top:6px">✏️ 編輯資料</button>`}</div>
     ${upc.length ? `<div class="card"><b>預約中</b><div class="rows">${upc.map(b => `<span>${fmtW(b.date)} ${b.start}</span><span>${esc(b.service)}・${b.status}</span>`).join("")}</div></div>` : ""}
-    ${voucherCard(c, on)}${creditCard(c, on)}
-    <div class="card"><b>調整抵用金</b><p class="hint" style="margin:2px 0 6px">例如補發、扣除，金額可以是負的。</p><div class="g2"><input class="fld" id="adj" inputmode="numeric" placeholder="500 或 -300"><input class="fld" id="adjw" placeholder="原因"></div><button type="button" class="btn g" id="adjok">調整</button></div>
-    <div class="sec">紀錄</div><div class="card">${timeline(c)}</div>`;
-  $("back").onclick = () => { UI.detail = null; UI.editC = null; render(); };
+    ${voucherCard(c, on)}${creditCard(c, on)}${creditForm(c)}
+    <div class="top" style="margin:16px 0 8px"><span class="sec" style="margin:0">紀錄</span><button type="button" class="mini" id="v-new">＋ 補一筆紀錄</button></div>
+    ${UI.editV === "new" ? visitForm() : ""}
+    <div class="card">${timeline(c)}</div>`;
+  $("back").onclick = () => { UI.detail = null; UI.editC = null; UI.editV = null; render(); };
   if($("ec-open")) $("ec-open").onclick = () => { UI.editC = c.id; render(); };
   if($("ec-x")) $("ec-x").onclick = () => { UI.editC = null; render(); };
-  if($("ec-save")) $("ec-save").onclick = () => run(async () => {
-    await api("adminCust", { cust:{ id:c.id, name:$("ec-name").value.trim() || c.name, phone:$("ec-phone").value, bday:$("ec-bday").value, ig:$("ec-ig").value, note:$("ec-note").value } }); UI.editC = null; }, "已儲存");
-  $("adjok").onclick = () => { const n = Number($("adj").value.replace(/[^\d-]/g,"")); if(!n){ toast("請填金額", true); return; }
-    confirmSend([{ to:c.name, line:false, tag:"", text:"" }].slice(0,0), [`${c.name} 的抵用金 ${n > 0 ? "+" : ""}${money(n)}（${$("adjw").value || "手動調整"}）`, "這個不會傳 LINE 給客人"],
-      () => run(() => api("adminCredit", { cid:c.id, amt:n, why:$("adjw").value }), "已調整")); };
+  if($("ec-save")) $("ec-save").onclick = () => {
+    const bday = parseDay($("ec-bday").value); if(bday === null){ toast("生日看不懂，請打像 1995.3.8 這樣", true); return; }
+    run(async () => { await api("adminCust", { cust:{ id:c.id, name:$("ec-name").value.trim() || c.name, phone:$("ec-phone").value, bday, ig:$("ec-ig").value, note:$("ec-note").value } }); UI.editC = null; }, "已儲存");
+  };
+  if($("ec-del")) $("ec-del").onclick = () => { if(!confirm(`刪除 ${c.name}？\n她的施作紀錄、抵用金紀錄會一起刪掉，找不回來。`)) return;
+    run(async () => { await api("adminCust", { removeId:c.id }); UI.detail = null; UI.editC = null; }, "已刪除"); };
+  $("v-new").onclick = () => { UI.vdraft = draftOf(null); UI.editV = "new"; render(); };
+  document.querySelectorAll("[data-ev]").forEach(x => x.onclick = () => { UI.vdraft = draftOf(DATA.visits.find(v => v.id === x.dataset.ev)); UI.editV = x.dataset.ev; render(); });
+  wireVisit(c); wireCredit(c, on);
 }
 
 /* ======================================================================
    記帳
    ====================================================================== */
 function adminAcct(){
-  const on = today();
-  UI.acctM = UI.acctM || on.slice(0,7);
-  const list = DATA.expenses.filter(e => e.date.startsWith(UI.acctM)).sort((a,b) => b.date.localeCompare(a.date));
-  const months = [...new Set(DATA.expenses.map(e => e.date.slice(0,7)).concat(on.slice(0,7)))].sort().reverse().slice(0,8);
-  $("pane").innerHTML = `<h2>記帳</h2><p class="hint">結帳時填的場地租金會自動記在這裡。</p>
+  const on = today(), E = EST(), M = UI.acctM = UI.acctM || on.slice(0,7);
+  const list = DATA.expenses.filter(e => e.date.startsWith(M)).sort((a,b) => b.date.localeCompare(a.date));
+  const estMs = isEstMonth(on.slice(0,4) + "-01") ? DATA.visits.map(v => (v.date || "").slice(0,7)).filter(m => m && isEstMonth(m) && m >= String(Number(on.slice(0,4)) - 1) + "-01") : [];
+  const months = [...new Set(DATA.expenses.map(e => e.date.slice(0,7)).concat(on.slice(0,7), estMs))].sort().reverse().slice(0,14);
+  const real = list.reduce((s,e) => s + (Number(e.amt)||0), 0), est = isEstMonth(M), nVis = visitsInMonth(M).length;
+  const yr = M.slice(0,4); let ytd = 0; for(let m = yr + "-01"; m <= (yr === on.slice(0,4) ? on.slice(0,7) : yr + "-12"); m = addM(m + "-01", 1).slice(0,7)) ytd += costOfMonth(m);
+  const cats = CFG().expenseCats.map(c => ({ c, a:list.filter(e => e.cat === c).reduce((s,e) => s + (Number(e.amt)||0), 0) })).filter(x => x.a);
+  $("pane").innerHTML = `<h2>記帳</h2><p class="hint">結帳時填的場地租金會自動記在這裡。數字會算進「統計」。</p>
+    <div class="kpis"><div class="kpi"><div class="l">${Number(M.slice(5))} 月支出${est ? "（估算）" : ""}</div><div class="v">${money(costOfMonth(M))}</div><div class="s">${est ? `${nVis} 位 × ${money(E.perVisit)}` : `${list.length} 筆`}</div></div>
+      <div class="kpi"><div class="l">${yr} 年支出</div><div class="v">${money(ytd)}</div><div class="s">${isEstMonth(yr + "-01") ? `${E.until.replace("-","/")} 以前是估算` : "到這個月為止"}</div></div></div>
     <div class="card"><b>新增支出</b>
       <div class="g2"><div><span class="lab">日期</span><input class="fld" type="date" id="x-date" value="${on}"></div><div><span class="lab">分類</span><select class="fld" id="x-cat">${CFG().expenseCats.map(c => `<option>${esc(c)}</option>`).join("")}</select></div></div>
       <div class="g2" style="grid-template-columns:1.6fr 1fr"><div><span class="lab">項目</span><input class="fld" id="x-name" placeholder="霧眉色乳 咖啡灰"></div><div><span class="lab">金額</span><input class="fld" id="x-amt" inputmode="numeric" placeholder="1800"></div></div>
       <button type="button" class="btn" id="x-add">記一筆</button></div>
     <div class="chips">${months.map(m => `<button type="button" class="chip${m===UI.acctM?" sel":""}" data-m2="${m}">${Number(m.slice(5))} 月</button>`).join("")}</div>
+    ${est ? `<div class="note warn" style="margin:0 0 10px">${Number(M.slice(5))} 月還沒開始記帳，先用估算：${nVis} 位客人 × ${money(E.perVisit)} = <b>${money(nVis * Number(E.perVisit))}</b>。${real ? `下面實際記的 ${money(real)} 不另外算，避免重複。` : ""}估算可以在「設定 → 支出分類」改。</div>` : ""}
     <div class="card" style="padding:4px 14px">${list.map(e => `<div class="exp"><div><span class="cat ${esc(e.cat)}">${esc(e.cat)}</span>${esc(e.name)}<div class="d">${fmt(e.date)}${e.auto ? "・結帳時自動記" : ""}</div></div><span style="display:flex;align-items:center;gap:6px"><b>${money(e.amt)}</b>${e.auto ? "" : `<button type="button" class="x" data-xdel="${e.id}" aria-label="刪除">×</button>`}</span></div>`).join("") || `<div class="empty" style="margin:10px 0">這個月還沒有支出</div>`}
-      <div class="line t"><span>${Number(UI.acctM.slice(5))} 月合計</span><span>${money(list.reduce((s,e)=>s+(Number(e.amt)||0),0))}</span></div></div>`;
+      ${cats.length > 1 ? `<div style="padding:8px 0 0">${cats.map(x => `<div class="line" style="font-size:13px;padding:2px 0"><span><span class="cat ${esc(x.c)}">${esc(x.c)}</span></span><span>${money(x.a)}</span></div>`).join("")}</div>` : ""}
+      <div class="line t"><span>${Number(M.slice(5))} 月實際記的合計</span><span>${money(real)}</span></div></div>`;
   $("pane").querySelectorAll("[data-m2]").forEach(b => b.onclick = () => { UI.acctM = b.dataset.m2; render(); });
   $("pane").querySelectorAll("[data-xdel]").forEach(b => b.onclick = () => { const e = DATA.expenses.find(x => x.id === b.dataset.xdel); if(confirm(`刪除「${e.name} ${money(e.amt)}」？`)) run(() => api("adminExpense", { remove:e.id }), "已刪除"); });
   $("x-add").onclick = () => { const amt = Number($("x-amt").value.replace(/\D/g,"")), name = $("x-name").value.trim(); if(!amt || !name){ toast("請填項目和金額", true); return; }
@@ -825,29 +982,31 @@ function rangeOf(k, on){
 function adminStat(){
   const on = today(), [from, to] = rangeOf(UI.range, on), N = x => Number(x) || 0;
   const inR = d => d >= from && d <= to;
-  const vs = DATA.visits.filter(v => inR(v.date) && v.source !== "補登"), ex = DATA.expenses.filter(e => inR(e.date));
-  const rev = vs.reduce((s,v) => s + N(v.revenue), 0), cost = ex.reduce((s,e) => s + N(e.amt), 0);
+  const E = EST(), vs = DATA.visits.filter(v => inR(v.date)), ex = DATA.expenses.filter(e => inR(e.date) && !isEstMonth(e.date.slice(0,7)));
+  const estN = vs.filter(v => isEstMonth(v.date.slice(0,7))).length, estAmt = estN * N(E.perVisit);
+  const rev = vs.reduce((s,v) => s + N(v.revenue), 0), cost = ex.reduce((s,e) => s + N(e.amt), 0) + estAmt;
   const rent = ex.filter(e => e.cat === "場地").reduce((s,e) => s + N(e.amt), 0);
   const treats = vs.filter(v => v.kind === "施作"), tus = vs.filter(v => v.kind === "補色");
   const mix = pkgOptions().map((p,i) => ({ ...p, n:treats.filter(v => N(v.paid) === p.paid).length, color:["#D4D6C8","#A2AA93","#161616","#6B6E66"][i] || "#888" }));
   const changed = treats.filter(v => v.picked && N(v.picked) !== N(v.paid)).length;
   const months = []; for(let d = from.slice(0,7)+"-01"; d <= to && months.length < 24; d = addM(d,1)) months.push(d.slice(0,7));
-  const mrev = months.map(m => DATA.visits.filter(v => v.date.startsWith(m) && v.source !== "補登").reduce((s,v)=>s+N(v.revenue),0));
-  const mcost = months.map(m => DATA.expenses.filter(e => e.date.startsWith(m)).reduce((s,e)=>s+N(e.amt),0));
+  const mrev = months.map(m => visitsInMonth(m).reduce((s,v)=>s+N(v.revenue),0));
+  const mcost = months.map(costOfMonth);
   const max = Math.max(1, ...mrev, ...mcost);
   const locs = CFG().locations.map(l => { const lv = vs.filter(v => v.loc === l.name); return { name:l.name, n:lv.length, rev:lv.reduce((s,v)=>s+N(v.revenue),0), rent:lv.reduce((s,v)=>s+N(v.rent),0) }; });
   const credOut = DATA.creditLog.filter(x => inR(x.date) && N(x.amt) > 0).reduce((s,x)=>s+N(x.amt),0), credUsed = vs.reduce((s,v)=>s+N(v.creditUsed),0);
   const fOff = vs.reduce((s,v)=>s+N(v.friendOff),0), referred = treats.filter(v => N(v.friendOff)).length;
-  const cats = CFG().expenseCats.map(c => ({ c, a:ex.filter(e => e.cat === c).reduce((s,e)=>s+N(e.amt),0) })).filter(x => x.a);
+  const cats = (estAmt ? [{ c:"估算", a:estAmt }] : []).concat(CFG().expenseCats.map(c => ({ c, a:ex.filter(e => e.cat === c).reduce((s,e)=>s+N(e.amt),0) })).filter(x => x.a));
   $("pane").innerHTML = `<h2>統計</h2>
     <div class="chips">${[["m","這個月"],["pm","上個月"],["3m","近 3 個月"],["y","今年"],["c","自訂"]].map(([k,t]) => `<button type="button" class="chip${UI.range===k?" sel":""}" data-rg="${k}">${t}</button>`).join("")}</div>
     ${UI.range === "c" ? `<div class="g2" style="margin-bottom:10px"><input class="fld" type="date" id="from" value="${from}"><input class="fld" type="date" id="to" value="${to}"></div>` : `<p class="hint">${fmt(from)} ～ ${fmt(to)}</p>`}
     <div class="kpis">
       <div class="kpi main"><div class="l">淨利（營業額 − 支出）</div><div class="v">${money(rev - cost)}</div><div class="s">${treats.length} 筆施作・${tus.length} 筆補色</div></div>
       <div class="kpi"><div class="l">營業額</div><div class="v">${money(rev)}</div><div class="s">客人實際付的錢</div></div>
-      <div class="kpi"><div class="l">總支出</div><div class="v">${money(cost)}</div><div class="s">${rev ? `占營業額 ${Math.round(cost/rev*100)}%` : ""}</div></div>
+      <div class="kpi"><div class="l">總支出</div><div class="v">${money(cost)}</div><div class="s">${estAmt ? `含估算 ${money(estAmt)}（${estN} 位）` : rev ? `占營業額 ${Math.round(cost/rev*100)}%` : ""}</div></div>
       <div class="kpi"><div class="l">場地租金</div><div class="v">${money(rent)}</div><div class="s">${vs.filter(v=>N(v.rent)).length ? `平均每場 ${money(Math.round(rent/vs.filter(v=>N(v.rent)).length))}` : ""}</div></div>
-      <div class="kpi"><div class="l">雜項支出</div><div class="v">${money(cost - rent)}</div><div class="s">${cats.filter(x=>x.c!=="場地").map(x=>esc(x.c)).join("、")}</div></div></div>
+      <div class="kpi"><div class="l">${estAmt ? "估算＋雜項" : "雜項支出"}</div><div class="v">${money(cost - rent)}</div><div class="s">${cats.filter(x=>x.c!=="場地").map(x=>esc(x.c)).join("、")}</div></div></div>
+    ${estAmt ? `<p class="fine2" style="margin:-4px 0 12px">${E.until.replace("-","/")} 以前還沒記帳，支出用「每位客人 ${money(E.perVisit)}」估算（施作和補色都算一位）。可以在「設定 → 支出分類」改。</p>` : ""}
     <div class="card"><b>客人選的包套</b><span class="meta" style="margin-left:6px">${treats.length} 筆施作</span>
       <div class="stack">${mix.map(m => `<i style="width:${treats.length ? m.n/treats.length*100 : 0}%;background:${m.color}"></i>`).join("")}</div>
       <div class="leg">${mix.slice().reverse().map(m => `<div><span class="sw" style="background:${m.color}"></span>${money(m.paid)}（${m.label}）<b>${m.n} 筆・${treats.length ? Math.round(m.n/treats.length*100) : 0}%</b></div>`).join("")}</div>
@@ -947,7 +1106,7 @@ function wireMonthChips(latest){
    ====================================================================== */
 const THEME_DEFAULT = { paper:"#F0EFEA", sage:"#A2AA93", pill:"#D4D6C8", ink:"#161616" };
 const THEME_FIELDS = [["paper","底色","整頁背景"],["sage","主色","選中的按鈕、色塊"],["pill","淺色","日期格、活動框"],["ink","文字","文字、深色按鈕"]];
-const BANNER_FIELDS = [["確認","按確認後，客人收到"],["成立","收到定金後"],["提醒","預約前一天"],["預約更新","修改預約並通知時"],["取消","取消預約"],["婉拒","婉拒預約"],["謝謝光臨","結帳完成（含補色券已加入）"],["推薦成功","推薦人拿到抵用金"],["到期提醒","補色券、續補、抵用金快到期"],["生日","生日祝福（開啟時）"],["新預約","你自己收到的新預約通知"]];
+const BANNER_FIELDS = [["確認","按確認後，客人收到"],["成立","收到定金後"],["提醒","預約前一天"],["預約更新","修改預約並通知時"],["取消","取消預約"],["婉拒","婉拒預約"],["謝謝光臨","結帳完成（含補色券已加入）"],["推薦成功","推薦人拿到抵用金"],["抵用金","你手動加抵用金時"],["到期提醒","補色券、續補、抵用金快到期"],["生日","生日祝福（開啟時）"],["新預約","你自己收到的新預約通知"]];
 function adminSet(){
   if(!UI.cfg) UI.cfg = JSON.parse(JSON.stringify(CFG()));
   const C = UI.cfg, S = SETT();
@@ -965,15 +1124,20 @@ function adminSet(){
       ${num("referReward","推薦人拿到的抵用金")}${num("friendOff","好友推薦折扣")}${num("creditMonths","抵用金期限（月）","有新的推薦就整筆延長")}
       <span>推薦標語</span><input data-cs="referHeadline" value="${esc(C.referHeadline)}"></div>
       <span class="lab">客人分享給朋友的訊息<small>{code} 推薦碼、{off} 折扣、{url} 預約連結</small></span><textarea class="fld" data-cs="shareText" style="min-height:130px">${esc(C.shareText)}</textarea>
+      <span class="lab">抵用金常用原因<small>用「、」隔開；客人頁面看得到</small></span><input class="fld" id="crr" value="${esc((C.creditReasons || []).join("、"))}" placeholder="麥麥贈送、生日禮">
       <span class="lab">IG 帳號<small>預約頁「看作品」按鈕會連到這裡</small></span><input class="fld" data-cs="igHandle" value="${esc(C.igHandle)}" placeholder="maimine.studio">
       <span class="lab">官方 LINE 加好友連結</span><input class="fld" data-cs="lineUrl" value="${esc(C.lineUrl)}"></div>
-    <div class="card"><b>工作室與房間</b><p class="hint" style="margin:2px 0 6px">地址會在預約成立後傳給客人；房間時租用來自動算租金。</p>
+    <div class="card"><b>工作室與房間</b><p class="hint" style="margin:2px 0 6px">地址和交通建議會在預約成立、前一天提醒時傳給客人；房間時租用來自動算租金。</p>
       ${C.locations.map((l,li) => `<div style="border-top:1px solid var(--pill);margin-top:8px;padding-top:4px"><div class="g2"><div><span class="lab">工作室</span><input class="fld" data-ln="${li}" value="${esc(l.name)}"></div><div style="align-self:end;text-align:right"><button type="button" class="mini" style="color:var(--red)" data-rmloc="${li}">刪除這間</button></div></div>
         <span class="lab">地址</span><input class="fld" data-la="${li}" value="${esc(l.address || "")}">
+        <span class="lab">交通建議<small>會跟地址一起傳給客人</small></span><input class="fld" data-lt="${li}" value="${esc(l.transit || "")}" placeholder="捷運中山站 3 號出口，走路約 5 分鐘">
         <span class="lab">房間<small>名稱・每小時租金</small></span>${l.rooms.map((r,ri) => `<div class="room" style="grid-template-columns:1fr 90px 26px"><input data-rm="${li}-${ri}" data-k="name" value="${esc(r.name)}" aria-label="房間"><input data-rm="${li}-${ri}" data-k="rate" inputmode="numeric" value="${r.rate}" aria-label="時租"><button type="button" class="x" data-rmrm="${li}-${ri}" aria-label="刪除">×</button></div>`).join("")}
         <button type="button" class="mini" data-addrm="${li}">＋ 新增房間</button></div>`).join("")}
       <button type="button" class="btn g" id="addloc">＋ 新增工作室</button></div>
-    <div class="card"><b>支出分類</b><input class="fld" id="cats" value="${esc(C.expenseCats.join("、"))}" style="margin-top:6px"><p class="fine2">用「、」隔開</p></div>
+    <div class="card"><b>支出分類</b><input class="fld" id="cats" value="${esc(C.expenseCats.join("、"))}" style="margin-top:6px"><p class="fine2">用「、」隔開</p>
+      <span class="lab">估算支出<small>還沒開始記帳的月份，用「客人數 × 金額」當支出</small></span>
+      <div class="g2"><div><span class="lab">估算到<small>這個月（含）以前</small></span><input class="fld" type="month" id="est-until" value="${esc((C.estimate || {}).until || "")}"></div><div><span class="lab">每位客人</span><input class="fld" id="est-per" inputmode="numeric" value="${esc((C.estimate || {}).perVisit ?? "")}"></div></div>
+      <p class="fine2">清空「估算到」就不估算。</p></div>
     <div class="card"><div class="top"><b>生日祝福</b><label class="chk" style="margin:0"><input type="checkbox" id="bdon"${C.bdayOn ? " checked" : ""}>${C.bdayOn ? "開啟中" : "已關閉"}</label></div>
       <p class="hint" style="margin:4px 0 6px">${C.bdayOn ? "客人生日當天早上 10 點會自動收到這則 LINE（有填生日、有綁 LINE 的客人）" : "關閉時不會傳任何生日訊息；客人的生日還是會照常記錄"}</p>
       <textarea class="fld" data-cs="bdayText" style="min-height:80px">${esc(C.bdayText)}</textarea></div>
@@ -993,8 +1157,8 @@ function adminSet(){
         <span>補色券到期前幾個月提醒</span><input data-rem="voucherMonths" value="${C.remind.voucherMonths}">
         <span>續補優惠到期前幾個月提醒</span><input data-rem="yearMonths" value="${C.remind.yearMonths}">
         <span>抵用金到期前幾個月提醒<br><small class="meta">可以填兩個，用「、」隔開</small></span><input data-rem="creditMonths" value="${C.remind.creditMonths.join("、")}"></div>
-      ${[["voucher","補色券提醒"],["year","續補優惠提醒"],["credit","抵用金提醒"],["reward","推薦成功通知"]].map(([k,t]) => `<span class="lab">${t}</span><textarea class="fld" data-tx="${k}">${esc(C.texts[k])}</textarea>`).join("")}
-      <p class="fine2" style="margin-bottom:10px">{name} 客人名字、{date} 日期、{amount} 金額、{friend} 朋友名字、{reward} 回饋金額、{months} 抵用金期限月數</p></details>
+      ${[["voucher","補色券提醒"],["year","續補優惠提醒"],["credit","抵用金提醒"],["reward","推薦成功通知"],["gift","手動加抵用金通知"]].map(([k,t]) => `<span class="lab">${t}</span><textarea class="fld" data-tx="${k}">${esc(C.texts[k])}</textarea>`).join("")}
+      <p class="fine2" style="margin-bottom:10px">{name} 客人名字、{date} 日期、{amount} 金額、{friend} 朋友名字、{reward} 回饋金額、{months} 抵用金期限月數、{why} 加抵用金的原因</p></details>
     <button type="button" class="btn" id="save-set" style="margin-top:14px">儲存設定</button>
     <p class="fine2">時段範圍、提前天數、定金金額、預約項目，在 Google 試算表的「其他設定」分頁裡改。</p>`;
   const pane = $("pane");
@@ -1005,6 +1169,10 @@ function adminSet(){
   $("addad").onclick = () => { C.addons.push({ add:2000, months:6 }); render(); };
   pane.querySelectorAll("[data-ln]").forEach(x => x.oninput = () => { C.locations[x.dataset.ln].name = x.value.trim(); });
   pane.querySelectorAll("[data-la]").forEach(x => x.oninput = () => { C.locations[x.dataset.la].address = x.value.trim(); });
+  pane.querySelectorAll("[data-lt]").forEach(x => x.oninput = () => { C.locations[x.dataset.lt].transit = x.value.trim(); });
+  $("crr").oninput = e => { C.creditReasons = e.target.value.split(/[、,，]/).map(s => s.trim()).filter(Boolean); };
+  const estSync = () => { C.estimate = { until:$("est-until").value, perVisit:Number($("est-per").value.replace(/\D/g,"")) || 0 }; };
+  $("est-until").oninput = $("est-until").onchange = estSync; $("est-per").oninput = estSync;
   pane.querySelectorAll("[data-rm]").forEach(x => x.oninput = () => { const [li,ri] = x.dataset.rm.split("-").map(Number), r = C.locations[li].rooms[ri]; r[x.dataset.k] = x.dataset.k === "rate" ? Number(x.value) || 0 : x.value; });
   pane.querySelectorAll("[data-rmrm]").forEach(x => x.onclick = () => { const [li,ri] = x.dataset.rmrm.split("-").map(Number); C.locations[li].rooms.splice(ri,1); render(); });
   pane.querySelectorAll("[data-addrm]").forEach(x => x.onclick = () => { C.locations[Number(x.dataset.addrm)].rooms.push({ name:"", rate:0 }); render(); });
