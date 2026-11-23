@@ -458,6 +458,10 @@ function confirmSend(msgs, also, onSend){
 /* 訊息範本（確認畫面裡都可以改） */
 const itemOf = b => `${b.service}${b.plan ? "・" + b.plan.replace("　"," ") : ""}${b.price ? " " + money(b.price) : ""}`;
 const infoLines = b => `日期：${fmtW(b.date)}\n時間：${b.start}\n地點：${b.loc}\n項目：${itemOf(b)}`;
+/* 預約成立、前一天提醒的說明文字：在「設定」裡改 */
+const TX_DEFAULT = { paidNote:"工作室採預約制，無法提前進場，準時抵達就可以囉！前一天會再提醒你。", remindTitle:"{name}，明天見囉！", remindNote:"今晚記得作息規律、睡飽、不要喝酒；也可以畫上自己習慣的眉毛前來，方便討論眉型。工作室無法提前進場，準時抵達就可以囉！" };
+const txOf = k => { const t = (CFG().texts || {})[k]; return t == null ? TX_DEFAULT[k] : t; };
+const paidNoteOf = b => fill(txOf("paidNote"), { name:b.name, date:fmtW(b.date), time:b.start, loc:b.loc }).trim();
 const placeLines = b => { const t = transitOf(b.loc); return `地址：${addrOf(b.loc) || "（還沒填地址）"}` + (t ? `\n交通：${t}` : ""); };
 const MSG = {
   confirm: (b, adj) => ({ tag: adj ? "時間確認（有調整）" : "時間確認", buttons: [SETT().payImage ? "查看收款碼" : "", "術前須知"].filter(Boolean),
@@ -465,7 +469,7 @@ const MSG = {
   paid: b => { const dep = depOf(b), rest = b.price ? Number(b.price) - dep : 0;
     const pay = dep ? `已收定金 ${money(dep)}${rest > 0 ? `，現場再付 ${money(rest)}` : ""}` : `${b.service === "補色" ? "這次使用補色券，" : ""}不用付定金${rest > 0 ? `，現場付 ${money(rest)}` : ""}`;
     return { tag:"預約成立", buttons:["Google 地圖導航","術前須知"],
-      text: `預約成立，謝謝你 🤍\n\n${infoLines(b)}\n${placeLines(b)}\n${pay}\n\n工作室採預約制，無法提前進場，準時抵達就可以囉！前一天會再提醒你。` }; },
+      text: `預約成立，謝謝你 🤍\n\n${infoLines(b)}\n${placeLines(b)}\n${pay}` + (paidNoteOf(b) ? `\n\n${paidNoteOf(b)}` : "") }; },
   decline: b => ({ tag:"時段無法安排", buttons:["看看其他時間"], text:`嗨 ${b.name}，不好意思，${fmtW(b.date)} ${b.start} 這個時段沒辦法安排。\n歡迎再看看其他時間，或直接在這裡跟麥麥討論！` }),
   cancel: b => ({ tag:"預約取消", buttons:[], text:`嗨 ${b.name}，你在 ${fmtW(b.date)} ${b.start} 的預約已取消。\n有任何問題都可以直接在這裡跟麥麥說。` }),
   update: (b, ch) => { const paid = b.status === "已預約";
@@ -1528,6 +1532,12 @@ function adminSet(){
       <div class="banners">${BANNER_FIELDS.map(([k,d]) => { const bn = (S.banners||{})[k] || {}; return `<div class="bn"><div><b>${k}</b><small>${d}</small></div>
         ${bn.url ? `<img src="${esc(bn.url)}" alt="${k}的橫幅">` : `<div class="bn-empty">MAIMINE<br>STUDIO</div>`}
         <div><label class="mini upl" for="bn-${k}">${bn.url ? "換圖" : "上傳"}</label><input type="file" id="bn-${k}" data-bn="${k}" accept="image/*" hidden>${bn.url ? `　<button type="button" class="mini" style="color:var(--red)" data-bnrm="${k}">移除</button>` : ""}</div></div>`; }).join("")}</div></div>
+    <div class="card"><b>預約成立、前一天提醒的文字</b>
+      <p class="hint" style="margin:2px 0 4px">日期、時間、地點、地址、交通、付款會自動帶進去，這裡只改說明的部分。可以用 {name} 客人名字、{date} 日期、{time} 時間、{loc} 地點。</p>
+      <span class="lab">預約成立通知<small>最後一段，清空就不放</small></span><textarea class="fld" data-tx="paidNote" rows="3">${esc(C.texts.paidNote ?? TX_DEFAULT.paidNote)}</textarea>
+      <span class="lab">前一天提醒：標題</span><input class="fld" data-tx="remindTitle" value="${esc(C.texts.remindTitle ?? TX_DEFAULT.remindTitle)}">
+      <span class="lab">前一天提醒：灰底的提醒文字</span><textarea class="fld" data-tx="remindNote" rows="4">${esc(C.texts.remindNote ?? TX_DEFAULT.remindNote)}</textarea>
+      <p class="fine2">前一天提醒要等 Apps Script 換成新版才會用這裡的文字。</p></div>
     <details class="adv"><summary>進階：提醒時間和 LINE 文字</summary>
       <div class="set">
         <span>補色券到期前幾個月提醒</span><input data-rem="voucherMonths" value="${C.remind.voucherMonths}">
