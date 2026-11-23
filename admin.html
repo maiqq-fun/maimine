@@ -412,8 +412,17 @@ function relogin(){
   return true;
 }
 
+/* 打字、選日期時先不要重畫畫面（重畫會讓輸入框跳掉、日期選單關掉）；
+   等手指離開所有輸入框再重畫，並維持原本捲動的位置 */
+let pendingRender = false;
+const typing = () => { const a = document.activeElement; return !!a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && $("pane").contains(a); };
+function flushRender(){ if(!pendingRender || typing()) return; pendingRender = false; const y = window.scrollY; render(); window.scrollTo(0, y); }
+function renderSoon(){ pendingRender = true; setTimeout(flushRender, 60); }
+document.addEventListener("focusout", () => setTimeout(flushRender, 60));
+
 function render(){
   if(!DATA) return;
+  pendingRender = false;
   const todo = DATA.bookings.filter(b => b.status === "待確認" || b.status === "待付定金").length;
   $("tabs").innerHTML = [["book",`預約${todo ? `<span class="bd">${todo}</span>` : ""}`],["cust","客人"],["acct","記帳"],["stat","統計"],["month","月份"],["set","設定"]]
     .map(([k,t]) => `<button type="button" class="tab${UI.tab===k?" sel":""}" data-tab="${k}">${t}</button>`).join("");
@@ -683,10 +692,11 @@ function wireBk(){
   const pull = () => { d.date = $("e-date").value; d.start = $("e-start").value; d.loc = $("e-loc").value; d.service = $("e-svc").value;
     s.room = $("s-room").value; s.code = $("s-code").value.trim(); s.start = $("s-start").value.trim(); s.end = $("s-end").value.trim(); s.rent = Number($("s-rent").value.replace(/\D/g,"")) || 0; s.link = $("s-link").value.trim(); s.note = $("s-note").value.trim(); };
   const recalc = () => { const r = locOf(d.loc).rooms.find(r => r.name === s.room); if(r) s.rate = r.rate; if(/^\d{1,2}:\d{2}$/.test(s.start) && /^\d{1,2}:\d{2}$/.test(s.end)) s.hours = hoursBetween(s.start, s.end); if(s.rate && s.hours) s.rent = Math.round(s.rate * s.hours); };
-  ["e-date","e-start","e-svc","s-code","s-link","s-note","s-rent"].forEach(id => $(id).onchange = () => { pull(); render(); });
-  $("e-loc").onchange = () => { pull(); s.room = ""; render(); };
-  $("s-room").onchange = () => { pull(); recalc(); render(); };
-  ["s-start","s-end"].forEach(id => $(id).onchange = () => { pull(); recalc(); render(); });
+  ["s-code","s-link","s-note","s-rent"].forEach(id => $(id).oninput = () => pull());
+  ["e-date","e-start","e-svc"].forEach(id => $(id).onchange = () => { pull(); renderSoon(); });
+  $("e-loc").onchange = () => { pull(); s.room = ""; renderSoon(); };
+  $("s-room").onchange = () => { pull(); recalc(); $("s-rent").value = s.rent || ""; };
+  ["s-start","s-end"].forEach(id => $(id).onchange = () => { pull(); recalc(); $("s-rent").value = s.rent || ""; });
   $("s-img").onchange = async e => { const f = e.target.files[0]; if(!f) return; pull();
     try{ const data = await resizeImage(f, 1200, 0.85); const j = await api("adminUpload", { data, mime:"image/jpeg", name:`studio-${b.id}.jpg` }); s.img = j.url; toast("截圖已上傳，記得按儲存"); render(); }
     catch(err){ toast(err.message, true); } };
@@ -791,15 +801,15 @@ function wireCheckout(){
     if(k === "loc"){ f.loc = x.value; f.room = (locOf(f.loc).rooms[0] || {}).name || ""; }
     if(k === "room") f.room = x.value;
     if(k === "hours") f.hours = Number(x.value);
-    if(k === "loc" || k === "room" || k === "hours"){ const r = locOf(f.loc).rooms.find(r => r.name === f.room); if(r) f.rent = Math.round(r.rate * f.hours); f.fromStudio = false; render(); return; }
+    if(k === "loc" || k === "room" || k === "hours"){ const r = locOf(f.loc).rooms.find(r => r.name === f.room); if(r) f.rent = Math.round(r.rate * f.hours); f.fromStudio = false; renderSoon(); return; }
     if(k === "rent"){ f.rent = x.value === "" ? null : Number(x.value.replace(/\D/g,"")); return; }
     const n = Number(String(x.value).replace(/\D/g,"")) || 0;
     if(k === "credit") f.credit = n;
     if(k === "redo") f.redo = n;
     if(k === "deposit") f.deposit = n;
-    if(e.type === "change") render();
+    if(e.type === "change") renderSoon();
   });
-  pane.querySelectorAll("[data-it]").forEach(x => { x.oninput = () => { const it = F(x).items[x.dataset.it]; it[x.dataset.k] = x.value; }; x.onchange = () => { const it = F(x).items[x.dataset.it]; if(x.dataset.k === "amt") it.amt = Number(String(x.value).replace(/[^\d-]/g,"")) || 0; render(); }; });
+  pane.querySelectorAll("[data-it]").forEach(x => { x.oninput = () => { const it = F(x).items[x.dataset.it]; it[x.dataset.k] = x.value; }; x.onchange = () => { const it = F(x).items[x.dataset.it]; if(x.dataset.k === "amt") it.amt = Number(String(x.value).replace(/[^\d-]/g,"")) || 0; renderSoon(); }; });
   pane.querySelectorAll("[data-addit]").forEach(x => x.onclick = () => { UI.forms[x.dataset.addit].items.push({ name:"", amt:"" }); render(); });
   pane.querySelectorAll("[data-rmit]").forEach(x => x.onclick = () => { F(x).items.splice(Number(x.dataset.rmit),1); render(); });
   pane.querySelectorAll("[data-rpo]").forEach(x => x.onclick = () => { UI.refPick = x.dataset.rpo; UI.refQ = ""; render(); });
@@ -948,8 +958,9 @@ function wireVisit(c){
     x.oninput = set;
     x.onchange = () => { set();
       if(k === "kind") d.service = d.kind === "補色" ? "補色" : (d.service === "補色" ? "霧眉" : d.service);
-      if(["kind","months","voucherUsed"].includes(k)){ pullDays(); render(); } };
+      if(["kind","months","voucherUsed"].includes(k)){ pullDays(); renderSoon(); } };
   });
+  $("vf-date").oninput = pullDays; if($("vf-used")) $("vf-used").oninput = pullDays;
   $("vf-save").onclick = () => { pullDays();
     const date = parseDay(d.date); if(!date){ toast("日期看不懂，請打像 2023.5.12 這樣", true); return; }
     const usedOn = d.voucherUsed ? parseDay(d.usedOn) : ""; if(usedOn === null){ toast("使用日看不懂，可以空著", true); return; }
@@ -1044,8 +1055,8 @@ function adminCust(){
     ${list.map(c => { const v = lastTreat(c.id); return `<button type="button" class="cl" data-det="${c.id}"><div><div class="n">${esc(c.name)}${c.special ? '<span class="b sp">⭐ 特殊</span>' : ""}${c.userId ? '<span class="b ln">LINE</span>' : '<span class="b no">未綁 LINE</span>'}${c.phone ? "" : '<span class="b ph">沒有手機</span>'}</div><div class="m">${esc(c.phone || c.ig || "")}${c.bday ? `・🎂 ${bdayTxt(c)}` : ""}</div><div class="m">${esc(c.code)}${v ? `・${fmt(v.date)} ${esc(v.service)}${v.source==="補登"?" 補登":""}` : ""}</div>${monthNote(c)}</div><div class="r">${right(c)}</div></button>`; }).join("") || `<div class="empty">找不到</div>`}`;
   const q = $("q"); q.oninput = () => { UI.q = q.value; const pos = q.selectionStart; render(); const n = $("q"); n.focus(); n.setSelectionRange(pos,pos); };
   $("pane").querySelectorAll("[data-fl]").forEach(b => b.onclick = () => { UI.filter = b.dataset.fl; render(); });
-  if($("fm")) $("fm").onchange = () => { if($("fm").value) UI.fm = $("fm").value; render(); };
-  if($("fmode")) $("fmode").onchange = () => { UI.fmode = $("fmode").value; render(); };
+  if($("fm")) $("fm").onchange = () => { if($("fm").value) UI.fm = $("fm").value; renderSoon(); };
+  if($("fmode")) $("fmode").onchange = () => { UI.fmode = $("fmode").value; renderSoon(); };
   if($("fcopy")) $("fcopy").onclick = async () => {
     const t = `${Number(UI.fm.slice(5))} 月${UI.fmode === "new" ? "新客" : "有來的客人"}（${list.length} 位）\n` + list.map(c => [c.name, c.phone, c.special ? "⭐特殊" : ""].filter(Boolean).join("　")).join("\n");
     try{ await navigator.clipboard.writeText(t); toast("已複製名單"); }catch(_){ prompt("複製下面的名單：", t); } };
@@ -1387,7 +1398,7 @@ function adminStat(){
       <span>好友推薦折扣</span><span>${money(fOff)}</span>
       <span>補色券</span><span>${DATA.visits.filter(v => v.kind==="施作" && N(v.months) && !v.voucherUsed && on <= addM(v.date, N(v.months))).length} 張還沒用</span></div></div>`;
   $("pane").querySelectorAll("[data-rg]").forEach(b => b.onclick = () => { UI.range = b.dataset.rg; render(); });
-  if($("from")){ $("from").onchange = e => { UI.from = e.target.value; render(); }; $("to").onchange = e => { UI.to = e.target.value; render(); }; }
+  if($("from")){ $("from").onchange = e => { UI.from = e.target.value; renderSoon(); }; $("to").onchange = e => { UI.to = e.target.value; renderSoon(); }; }
 }
 
 /* ======================================================================
@@ -1527,9 +1538,9 @@ function adminSet(){
     <button type="button" class="btn" id="save-set" style="margin-top:14px">儲存設定</button>
     <p class="fine2">時段範圍、提前天數、定金金額、預約項目，在 Google 試算表的「其他設定」分頁裡改。</p>`;
   const pane = $("pane");
-  pane.querySelectorAll("[data-c]").forEach(x => x.onchange = () => { C[x.dataset.c] = Number(x.value.replace(/\D/g,"")) || 0; render(); });
+  pane.querySelectorAll("[data-c]").forEach(x => x.onchange = () => { C[x.dataset.c] = Number(x.value.replace(/\D/g,"")) || 0; renderSoon(); });
   pane.querySelectorAll("[data-cs]").forEach(x => x.oninput = () => { C[x.dataset.cs] = x.value; });
-  pane.querySelectorAll("[data-ad]").forEach(x => x.onchange = () => { C.addons[x.dataset.ad][x.dataset.k] = Number(x.value) || 0; render(); });
+  pane.querySelectorAll("[data-ad]").forEach(x => x.onchange = () => { C.addons[x.dataset.ad][x.dataset.k] = Number(x.value) || 0; renderSoon(); });
   pane.querySelectorAll("[data-rmad]").forEach(x => x.onclick = () => { C.addons.splice(Number(x.dataset.rmad),1); render(); });
   $("addad").onclick = () => { C.addons.push({ add:2000, months:6 }); render(); };
   pane.querySelectorAll("[data-ln]").forEach(x => x.oninput = () => { C.locations[x.dataset.ln].name = x.value.trim(); });
