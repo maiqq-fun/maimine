@@ -593,8 +593,8 @@ function bkCard(b, on, inAgenda){
   if(UI.open === b.id) return html + checkoutForm(b, c) + `</div>`;
   const acts = [];
   if(b.status === "待確認" && free) acts.push(`<button type="button" class="btn" data-pform="${b.id}" data-free="1">確認・免定金</button><button type="button" class="btn g" data-ok="${b.id}">改收定金</button>`);
-  else if(b.status === "待確認") acts.push(`<button type="button" class="btn" data-pform="${b.id}">💰 已收定金</button><button type="button" class="btn g" data-ok="${b.id}">傳定金資訊</button>`);
-  if(b.status === "待付定金") acts.push(`<button type="button" class="btn" data-pform="${b.id}">💰 已收定金</button>`);
+  else if(b.status === "待確認") acts.push(`<button type="button" class="btn" data-pform="${b.id}">💰 已收定金</button><button type="button" class="btn g" data-ok="${b.id}">傳定金資訊</button><button type="button" class="btn g" data-pform="${b.id}" data-free="1">免定金成立</button>`);
+  if(b.status === "待付定金") acts.push(`<button type="button" class="btn" data-pform="${b.id}">💰 已收定金</button><button type="button" class="btn g" data-pform="${b.id}" data-free="1">免定金成立</button>`);
   if(b.status === "已預約" && b.date <= on) acts.push(`<button type="button" class="btn" data-open="${b.id}">結帳</button>`);
   if(s && s.link) acts.push(`<a class="btn g" href="${esc(s.link)}" target="_blank" rel="noopener">入場 QR</a>`);
   if(s && s.img) acts.push(`<button type="button" class="btn g" data-img="${b.id}">截圖</button>`);
@@ -624,7 +624,8 @@ function editForm(b){
   const ch = changesOf(b, d), pending = b.status === "待確認", pm = UI.paidMode && UI.paidMode.id === b.id ? UI.paidMode : null;
   const times = TIMES.includes(d.start) ? TIMES : TIMES.concat(d.start).sort();
   return `<div class="stu edit">
-    ${pm ? `<div class="note ok" style="margin:0 0 10px">${pm.free ? "這次用補色券，不收定金。" : `收到定金 ${money(depOf(b))} 了！`}確認下面的時間地點，工作室可以現在填、也可以之後再補。按「預約成立」後，系統會把<b>預約成立＋地址</b>傳給客人。</div>` : ""}
+    ${pm ? `<div class="note ok" style="margin:0 0 10px">${pm.free ? (isFreeTouch(b, custOf(b.cid)) ? "這次用補色券，不收定金。" : "這次不收定金。") : `收到定金 ${money(depOf(b))} 了！`}確認下面的時間地點，工作室可以現在填、也可以之後再補。按「預約成立」後，系統會把<b>預約成立＋地址</b>傳給客人。</div>
+      <label class="chk" style="margin:-4px 0 10px"><input type="checkbox" id="e-free"${pm.free ? " checked" : ""}>這次不收定金</label>` : ""}
     <b>預約資訊</b><span class="meta">　客人看得到</span>
     <div class="g2"><div><span class="lab">日期</span><input class="fld" type="date" id="e-date" value="${d.date}"></div><div><span class="lab">時間</span><select class="fld" id="e-start">${times.map(t => `<option${t===d.start?" selected":""}>${t}</option>`).join("")}</select></div></div>
     <div class="g2"><div><span class="lab">地點</span><select class="fld" id="e-loc">${S.locations.map(l => `<option${l===d.loc?" selected":""}>${esc(l)}</option>`).join("")}</select></div><div><span class="lab">項目</span><select class="fld" id="e-svc">${S.services.concat(S.services.includes(d.service) ? [] : [d.service]).map(x => `<option${x===d.service?" selected":""}>${esc(x)}</option>`).join("")}</select></div></div>
@@ -637,6 +638,7 @@ function editForm(b){
       <div class="g2"><div><span class="lab">截圖</span><input class="fld" type="file" id="s-img" accept="image/*">${s.img ? `<span class="meta">已上傳 ✓</span>` : ""}</div><div><span class="lab">備註</span><input class="fld" id="s-note" value="${esc(s.note)}"></div></div>
       <div style="height:10px"></div></details>
     ${pm ? "" : ch.length ? (pending ? `<p class="meta" style="margin:10px 0 0">按「確認」時，會把更新後的資訊一起傳給客人。</p>` : b.userId ? `<label class="chk"><input type="checkbox" id="e-notify" checked>通知客人預約資訊更新（${ch.map(c => c[0]).join("、")}）</label>` : `<p class="meta" style="margin:10px 0 0">這位沒有綁 LINE，記得自己通知她。</p>`) : ""}
+    ${!pm && b.status === "已預約" ? `<label class="chk"><input type="checkbox" id="e-nodep"${depOf(b) === 0 ? " checked" : ""}>這位不收定金（結帳時不會扣定金）</label>` : ""}
     <div class="btns"><button type="button" class="btn" id="e-save">${pm ? (pm.free ? "預約成立（免定金）" : "已收定金，預約成立") : "儲存"}</button><button type="button" class="btn g" id="e-cancel">取消</button></div>
     <button type="button" class="mini" id="e-drop" style="color:var(--red);margin-top:8px">${pending ? "婉拒這筆預約" : "取消這筆預約"}</button>
     <button type="button" class="mini" id="e-del" style="color:var(--muted);margin:8px 0 0 16px">🗑 直接刪除（不通知客人）</button>
@@ -718,6 +720,7 @@ function wireBk(){
   };
   $("e-del").onclick = () => { if(!confirm(`刪除 ${b.name} ${fmtW(b.date)} ${b.start} 這筆預約？\n不會通知客人，刪掉就找不回來。`)) return;
     run(async () => { await api("adminUpdate", { id:b.id, op:"delete" }); UI.editing = null; }, "已刪除，時段重新開放"); };
+  if($("e-free")) $("e-free").onchange = () => { pull(); UI.paidMode.free = $("e-free").checked; const y = window.scrollY; render(); window.scrollTo(0, y); };
   $("e-save").onclick = () => { pull();
     const ch = changesOf(b, d), notify = $("e-notify") && $("e-notify").checked;
     const timeMoved = d.date !== b.date || d.start !== b.start;
@@ -734,7 +737,9 @@ function wireBk(){
           `${b.name} 預約成立！已移到「行程」`));
       return;
     }
-    const go = msg => run(async () => { await api("adminUpdate", { id:b.id, op:"save", date:d.date, start:d.start, loc:d.loc, service:d.service, studio, msg }); delete UI.forms[b.id]; UI.editing = null; },
+    const nd = $("e-nodep") ? ($("e-nodep").checked ? 0 : (depOf(b) === 0 ? SETT().deposit : null)) : null;
+    const depPatch = nd !== null && nd !== depOf(b) ? { dep:nd } : {};
+    const go = msg => run(async () => { await api("adminUpdate", Object.assign({ id:b.id, op:"save", date:d.date, start:d.start, loc:d.loc, service:d.service, studio, msg }, depPatch)); delete UI.forms[b.id]; UI.editing = null; },
       ch.length ? (msg ? "已儲存，並通知客人" : b.status === "待確認" ? "已儲存，確認時會一起通知客人" : "已儲存（沒有通知客人）") : "已儲存");
     if(ch.length && notify){ const nb = Object.assign({}, b, { date:d.date, start:d.start, loc:d.loc, service:d.service }), m = MSG.update(nb, ch);
       confirmSend([{ to:b.name, ...m }], ["儲存這次的修改"], t => go(t[0] ? { text:t[0], tag:m.tag } : null)); }
