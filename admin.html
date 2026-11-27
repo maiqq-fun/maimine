@@ -642,6 +642,7 @@ function editForm(b){
     <div class="btns"><button type="button" class="btn" id="e-save">${pm ? (pm.free ? "預約成立（免定金）" : "已收定金，預約成立") : "儲存"}</button><button type="button" class="btn g" id="e-cancel">取消</button></div>
     <button type="button" class="mini" id="e-drop" style="color:var(--red);margin-top:8px">${pending ? "婉拒這筆預約" : "取消這筆預約"}</button>
     <button type="button" class="mini" id="e-del" style="color:var(--muted);margin:8px 0 0 16px">🗑 直接刪除（不通知客人）</button>
+    ${!pm && b.status === "已預約" ? `<div style="margin-top:10px"><button type="button" class="mini" id="e-resend">📩 重傳預約成立通知</button></div>` : ""}
   </div>`;
 }
 function changesOf(b, d){
@@ -717,6 +718,12 @@ function wireBk(){
   $("e-drop").onclick = () => { const pending = b.status === "待確認", op = pending ? "decline" : "cancel", m = MSG[op](b);
     confirmSend([{ to:b.name, line:!!b.userId, ...m }], [`預約${pending ? "婉拒" : "取消"}，${fmtW(b.date)} ${b.start} 的時段重新開放`],
       t => run(async () => { await api("adminUpdate", { id:b.id, op, msg: b.userId && t[0] ? { text:t[0], tag:m.tag } : null }); UI.editing = null; }, pending ? "已婉拒，時段重新開放" : "已取消，時段重新開放"));
+  };
+  if($("e-resend")) $("e-resend").onclick = () => {
+    if(!b.userId){ toast(`${b.name} 沒有綁 LINE，沒辦法傳`, true); return; }
+    const m = MSG.paid(b);
+    confirmSend([{ to:b.name, line:true, ...m }], ["只重傳通知，預約資料不會改", "用的是目前存好的日期、時間、地點；有改過請先按「儲存」"],
+      t => run(() => api("adminUpdate", { id:b.id, op:"paid", msg: t[0] ? { text:t[0], tag:m.tag } : null }), `已重傳給 ${b.name}`));
   };
   $("e-del").onclick = () => { if(!confirm(`刪除 ${b.name} ${fmtW(b.date)} ${b.start} 這筆預約？\n不會通知客人，刪掉就找不回來。`)) return;
     run(async () => { await api("adminUpdate", { id:b.id, op:"delete" }); UI.editing = null; }, "已刪除，時段重新開放"); };
